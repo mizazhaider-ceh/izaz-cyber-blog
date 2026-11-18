@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Callout } from "./Callout";
 import { CodeBlock } from "./CodeBlock";
+import { Diagram } from "./Diagram";
 import { slugify } from "@/lib/format";
 
 function textFromChildren(node: ReactNode): string {
@@ -72,6 +73,7 @@ function heading(level: 2 | 3) {
 const components: Record<string, ComponentType<Record<string, unknown>>> = {
   pre: PreBlock as ComponentType<Record<string, unknown>>,
   Callout: Callout as unknown as ComponentType<Record<string, unknown>>,
+  Diagram: Diagram as unknown as ComponentType<Record<string, unknown>>,
   h2: heading(2) as ComponentType<Record<string, unknown>>,
   h3: heading(3) as ComponentType<Record<string, unknown>>,
   p: (({ children }: { children?: ReactNode }) => (
