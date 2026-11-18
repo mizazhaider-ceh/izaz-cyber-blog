@@ -1,0 +1,229 @@
+---
+title: "Analyzing insecure authentication"
+slug: "analyzing-insecure-authentication"
+description: "How authentication actually breaks in real applications, from credential handling to session management to brute force and lockout design, and how to test each part."
+date: "2026-11-18"
+category: "Web Security"
+tags: ["authentication", "sessions", "web-security", "owasp"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+Authentication is the process of verifying that a person or system is who it claims to be. That definition is short, and the work behind it is long. A login page is the most tested part of any application, because it is the front door, and it is also the part where small mistakes have the largest consequences. A broken login does not just let one attacker in. It lets an attacker in as someone else, with that person's data, permissions, and trust.
+
+OWASP lists authentication failures as one of its most critical web application risk categories, and its Authentication Cheat Sheet is the best single starting point for building a login that holds up. This article works through the pieces in the order an attacker meets them: the credential itself, how it is stored, how the login endpoint behaves under guessing, how the session is issued and checked, and how account recovery quietly reopens the same door. It is grounded in the OWASP cheat sheets, and where it touches real experience, it draws on the authentication modules in PenTrix, a deliberately vulnerable lab I built, where broken authentication, JWT attacks, and session problems are separate modules precisely because they break in separate ways.
+
+A note on scope before starting: authentication proves who someone is. Authorisation decides what they may do. The two are often confused, and the confusion causes real bugs, such as a login that works correctly and then lets any logged in user open any other user's account. This article covers authentication and the session that carries it. Authorisation deserves its own article, and where the two meet, the boundary will be named.
+
+## What authentication actually is
+
+Strip a login down to its parts and there are four of them. Identification is the claim: a username, an email address, an account number. Authentication is the proof: a password, a one time code, a hardware key, something that only the real owner should have. A session is what the server issues after the proof succeeds, so the user does not have to prove themselves on every single request. And recovery is the process that issues a new proof when the old one is lost, which means recovery is authentication too, with the same strength requirements, even though it is often built as an afterthought.
+
+<Callout type="NOTE">
+A password is one factor: something you know. Multi-factor authentication adds a second kind of evidence, such as something you have, like a phone that generates a one time code, or something you are, like a fingerprint. Two passwords are not two factors. Two examples of the same factor add very little, because an attacker who can steal one can often steal the other in the same way.
+</Callout>
+
+## Credentials: what users type, and what it means
+
+The credential most applications still rely on is a password, and the first question is what makes a password strong enough. The OWASP Authentication Cheat Sheet, following NIST SP 800-63B, gives a clear answer, and it is not the answer most people learned a decade ago. Length matters far more than complexity. Passwords used as the only factor should be at least 15 characters long. Passwords used as part of multi-factor authentication may be as short as 8 characters, because the second factor carries part of the strength. The maximum length should be at least 64 characters, so that passphrases fit. And composition rules, the old demand for one uppercase letter, one digit, and one symbol, should be dropped. They push users toward predictable patterns, such as a capital letter at the start and a digit at the end, and they do very little against a guessing attack.
+
+That shift surprises people who were taught to enforce complexity, so it is worth saying why it happened. A guessing attack does not care whether a password contains a symbol. It cares how many guesses the password space contains, and how fast guesses can be tried. A long passphrase made of ordinary words has a far larger space than a short password that satisfies every composition rule, and it is far easier to remember, which means users are less likely to write it down or reuse it. The cheat sheet also recommends checking new passwords against lists of previously breached passwords, so that a password which is long but already public, such as a famous quote, is rejected at registration.
+
+## Storing passwords: slow, salted, and never reversible
+
+A password that arrives over the network must be stored, and the storage decision is the one that matters most when a database is stolen. The rule is simple to state and easy to get wrong: never store a password in plain text, never store it encrypted with a reversible key, and never store it with a fast hash. Store it with a slow, salted password hashing function, designed for exactly this job.
+
+A fast hash, such as SHA-256, is the wrong tool because it is fast. An attacker with a stolen database and a graphics card can try billions of guesses per second against a fast hash. A password hashing function is deliberately slow and deliberately memory hungry, so that each guess costs real time and real memory. That cost is trivial for a legitimate login, which happens once per session, and it is crippling for an attacker who needs to try millions of guesses.
+
+The OWASP Password Storage Cheat Sheet gives concrete parameters, and they are worth quoting exactly, because vague advice like "use a strong hash" is how teams end up with a weak one. For new systems, use Argon2id with a minimum of 19 MiB of memory, an iteration count of 2, and 1 degree of parallelism. If Argon2id is not available, use scrypt with a CPU and memory cost parameter of 2 to the power of 17, a block size of 8, and a parallelisation parameter of 1. For legacy systems using bcrypt, use a work factor of 10 or more, and remember that bcrypt has a password limit of 72 bytes. If FIPS-140 compliance is required, use PBKDF2 with a work factor of 600,000 or more and HMAC-SHA-256 as the internal hash function. A pepper, a secret value stored outside the database and mixed into the hash, adds defense in depth, so that a stolen database alone is not enough.
+
+Two supporting pieces complete the picture. A salt is a unique random value generated for each password, stored alongside the hash, which defeats precomputed lookup tables and makes identical passwords hash differently. Libraries generate the salt and store it in the output string, so there is no need to manage it by hand. And comparison must be constant time, so that the time taken to reject a wrong password does not leak how much of it was right.
+
+In PenTrix, the lab I built, broken authentication is a module of its own, and the lesson it teaches is the same one the cheat sheet teaches: the storage choice is invisible to the user and decisive for the attacker. A login page that looks identical can be safe or catastrophic depending on a single function call in the code behind it, and no amount of front-end polish changes that.
+
+```python
+# Illustrative example, not production code: the shape of a correct check
+# The stored value already contains the salt and parameters.
+# The library compares in constant time.
+import argon2
+
+hasher = argon2.PasswordHasher(memory_cost=19456, time_cost=2, parallelism=1)
+stored_hash = "REDACTED"  # value read from the database for this user
+
+try:
+    hasher.verify(stored_hash, "REDACTED")  # password supplied at login
+    print("password matches")
+except argon2.exceptions.VerifyMismatchError:
+    print("password does not match")
+```
+
+Illustrative output:
+
+```text
+password does not match
+```
+
+The example uses placeholders deliberately. No real password appears anywhere in this article, even as an example, and that is a rule worth keeping in your own notes too. Example passwords have a habit of becoming real passwords when someone copies them into a test account and forgets.
+
+## The login endpoint under attack
+
+A correct hash does not help if the login endpoint lets an attacker try guesses without limit. Three attacks dominate this space, and they are different enough that they need different defenses.
+
+**Brute force** tests many passwords against a single account. The defense is to make each guess expensive and to slow the attacker down: rate limiting, progressive delays, and, after a number of failures, a temporary lockout. The lockout must be designed with care, because a lockout that is too easy to trigger becomes a denial of service: anyone can lock any account by failing its login a few times. A good design locks the account for a short period, increases the delay with each failure, and offers a recovery path that does not depend on the locked account alone.
+
+**Credential stuffing** tests username and password pairs stolen from another site's breach against this site, relying on the fact that people reuse passwords. Rate limiting by IP address alone does not stop it, because the attacker spreads the attempts across many addresses. The OWASP Credential Stuffing Prevention Cheat Sheet recommends combining several signals: rate limiting by account as well as by address, device fingerprinting, requiring a second factor when the login looks unusual, and checking passwords against breach lists at registration and at login. Multi-factor authentication is, in the cheat sheet's words, by far the best defense against the majority of password related attacks, including credential stuffing and password spraying, and it cites Microsoft analysis suggesting it would have stopped 99.9 percent of account compromises.
+
+**Password spraying** tests a single weak password against many different accounts, staying under the lockout threshold for each one. Because each account sees only one or two failures, a per account lockout never fires. The defense is to watch the pattern across accounts: many failures for the same password, many failures from the same source, and a sudden rise in failed logins overall. That is a monitoring problem as much as a code problem, and it is why login logs matter. An application that does not log failed logins cannot see a spraying attack at all.
+
+<Callout type="WARNING">
+Never test brute force or credential stuffing against a live system you do not own. Even a small test can lock real users out of their accounts, trigger fraud alerts, and, in the case of a spraying test, look exactly like a real attack to the team defending the system. Test in a lab you control, with accounts you created, and with the lockout thresholds written down before you start.
+</Callout>
+
+## Sessions: the credential you get after login
+
+Once the password check passes, the server issues a session, and the session becomes the credential that matters for the rest of the visit. The user no longer sends a password on every request. They send a session token, usually in a cookie, and the server looks that token up and decides who the user is. Everything about session security follows from that fact: whoever holds the token is treated as the user, until the token expires or is revoked.
+
+A session token must be random, long, and unpredictable. The OWASP Session Management Cheat Sheet recommends at least 128 bits of entropy, generated by a cryptographic random source, never derived from the username, the time, or a counter. It must be issued by the server, never chosen by the client, and it must be rotated, which means replaced with a fresh token, at login and at any privilege change, such as enabling multi-factor authentication or changing a password. Rotation is what stops session fixation, an attack where the attacker sets the victim's session token before login, and then uses the same token after the victim logs in, because the server never changed it.
+
+The cookie that carries the token needs three flags, and missing any one of them is a finding. `HttpOnly` prevents JavaScript from reading the cookie, which limits what a cross-site scripting flaw can steal. `Secure` means the cookie is only sent over HTTPS, so it is never exposed on an unencrypted connection. `SameSite=Lax` means the browser does not send the cookie on cross-site requests, which limits cross-site request forgery. A typical secure cookie header looks like this:
+
+```http
+Set-Cookie: __Host-sid=REDACTED; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=28800
+```
+
+The name and value here are placeholders. The shape is the point: a random identifier, the three flags, a path, and a lifetime.
+
+That lifetime needs two limits, not one. An idle timeout ends the session after a period of inactivity, such as 30 minutes without a request. An absolute timeout ends the session after a fixed period from login, such as 8 hours, no matter how active the user has been. Idle timeout alone lets a session live forever as long as the user keeps clicking. Absolute timeout alone logs a user out in the middle of a long working session for no reason. Together, they bound how long a stolen token stays useful.
+
+Logout must destroy the session on the server, not just delete the cookie in the browser. Deleting the cookie leaves the token valid, and anyone who copied it can keep using it. Changing a password or enabling multi-factor authentication should also revoke existing sessions, so that a token stolen before the change does not survive it. And the session should store as little as possible on the client. Keep the user identifier and the expiry, and keep the rest on the server, where the application controls it.
+
+<Diagram title="Login session lifecycle, with the attack point at each step" caption="Each step of a session has its own failure mode. The checks that matter are the ones at the step where the failure lives, not a single check at the front door.">
+<svg viewBox="0 0 720 420" width="100%" role="img" aria-labelledby="analyzing-insecure-authentication-d1-title analyzing-insecure-authentication-d1-desc">
+<title id="analyzing-insecure-authentication-d1-title">Login session lifecycle sequence</title>
+<desc id="analyzing-insecure-authentication-d1-desc">A sequence diagram of a login session lifecycle between a browser, an application server, and a session store, with the attack point at each step marked.</desc>
+<rect x="24" y="24" width="160" height="48" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="104" y="44" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Browser</text>
+<text x="104" y="62" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">user agent</text>
+<rect x="280" y="24" width="160" height="48" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="44" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">App server</text>
+<text x="360" y="62" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">checks and issues</text>
+<rect x="536" y="24" width="160" height="48" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="616" y="44" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Session store</text>
+<text x="616" y="62" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">server side state</text>
+<line x1="104" y1="72" x2="104" y2="392" stroke="var(--border)" strokeWidth="1" />
+<line x1="360" y1="72" x2="360" y2="392" stroke="var(--border)" strokeWidth="1" />
+<line x1="616" y1="72" x2="616" y2="392" stroke="var(--border)" strokeWidth="1" />
+<line x1="104" y1="104" x2="352" y2="104" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#auth-arrow)" />
+<rect x="132" y="88" width="188" height="18" fill="var(--background)" />
+<text x="226" y="101" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">POST login, user plus pass</text>
+<line x1="368" y1="140" x2="608" y2="140" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#auth-arrow)" />
+<rect x="396" y="124" width="188" height="18" fill="var(--background)" />
+<text x="490" y="137" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">verify slow hash</text>
+<line x1="608" y1="176" x2="368" y2="176" stroke="var(--success)" strokeWidth="1.5" strokeDasharray="5,4" markerEnd="url(#auth-arrow)" />
+<rect x="396" y="160" width="188" height="18" fill="var(--background)" />
+<text x="490" y="173" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">match, rotate token</text>
+<line x1="104" y1="212" x2="352" y2="212" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#auth-arrow)" />
+<rect x="132" y="196" width="188" height="18" fill="var(--background)" />
+<text x="226" y="209" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">request with cookie</text>
+<line x1="368" y1="248" x2="608" y2="248" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#auth-arrow)" />
+<rect x="396" y="232" width="188" height="18" fill="var(--background)" />
+<text x="490" y="245" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">look up, check expiry</text>
+<line x1="104" y1="284" x2="352" y2="284" stroke="var(--primary)" strokeWidth="1.5" markerEnd="url(#auth-arrow)" />
+<rect x="132" y="268" width="188" height="18" fill="var(--background)" />
+<text x="226" y="281" textAnchor="middle" fontSize="11" fill="var(--primary)" fontFamily="var(--font-mono), monospace">POST logout</text>
+<line x1="368" y1="320" x2="608" y2="320" stroke="var(--primary)" strokeWidth="1.5" markerEnd="url(#auth-arrow)" />
+<rect x="396" y="304" width="188" height="18" fill="var(--background)" />
+<text x="490" y="317" textAnchor="middle" fontSize="11" fill="var(--primary)" fontFamily="var(--font-mono), monospace">destroy server side</text>
+<text x="360" y="356" textAnchor="middle" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Attack points: guessing at step 1, fixation at step 3, theft at step 4.</text>
+<text x="360" y="378" textAnchor="middle" fontSize="12" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Logout must destroy the server record, not just clear the cookie.</text>
+<defs>
+<marker id="auth-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
+
+## Multi-factor authentication, done properly
+
+Multi-factor authentication is the single most effective control against password attacks, and it is also the one most often implemented in a way that leaves a hole. The OWASP Multifactor Authentication Cheat Sheet is clear about the shape of a correct implementation, and the mistakes are specific enough to list.
+
+First, the second factor must be checked before the session is granted. A common bug is to issue a full session after the password check, mark it as pre-authentication in the code, and then forget to enforce that mark on some routes. If any route trusts the pre-authentication session, the second factor is optional in practice. The session should grant nothing until every factor has succeeded.
+
+Second, the second factor must be a different kind of evidence from the password. A one time code sent by SMS is a second factor, but a weak one: it can be intercepted, and it can be tricked out of a user by phishing. A time based one time code from an authenticator app is stronger. A hardware security key, using the FIDO standards, is stronger still, because it is bound to the site it was registered on, and a phishing page on a different domain cannot use it. The cheat sheet recommends offering TOTP as a baseline and hardware keys where the risk justifies them, and it warns that SMS should be treated as a fallback, not a first choice.
+
+## Recovery: the second front door
+
+Account recovery is where many otherwise careful applications fail, because it is designed as a convenience feature and tested as one. The OWASP Forgot Password Cheat Sheet treats it as an authentication ceremony, and that framing is the right one. A password reset link is a credential. Whoever holds it can set a new password and take the account. So it must have the properties of a credential: random, single use, short lived, and stored hashed on the server, so that a stolen database does not hand out live reset links.
+
+The flow should look like this. The user asks for a reset and gives an identifier. The application responds the same way whether the identifier is registered or not, so it does not leak account existence. If the account exists, the server generates a random token, stores its hash with a short expiry, and sends a link to the verified email address on file. When the link is used, the server checks the token, asks for the new password, checks that password against the same policy as registration, and then invalidates all existing sessions and all other outstanding reset tokens for that account. The user is then asked to log in again with the new password.
+
+Three mistakes break this flow in practice. The first is a token that never expires, or that can be used more than once, which turns a leaked email into a permanent back door. The second is a token that is predictable, such as a hash of the username or a timestamp, which an attacker can compute without access to the email. The third is a reset flow that skips the password policy, letting a user reset to a weak password that registration would have rejected. Each of these is easy to test, and each is worth testing, because recovery is the path an attacker chooses when the front door is locked.
+
+## How the failure modes group together
+
+Authentication failures cluster by where they live, and that clustering is useful twice: once for building, and once for testing. A builder can check each cluster as a unit. A tester can work through the clusters in order and know what to look for in each.
+
+<Diagram title="Failure modes, grouped by where they live" caption="Four clusters, four checklists. A login can be strong in three clusters and broken in the fourth, and the fourth is the one the attacker finds.">
+<svg viewBox="0 0 720 400" width="100%" role="img" aria-labelledby="analyzing-insecure-authentication-d2-title analyzing-insecure-authentication-d2-desc">
+<title id="analyzing-insecure-authentication-d2-title">Authentication failure modes grouped</title>
+<desc id="analyzing-insecure-authentication-d2-desc">A diagram grouping common authentication failure modes into four clusters: credential storage, transport, session, and lockout.</desc>
+<rect x="24" y="24" width="330" height="160" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="48" y="52" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Credential storage</text>
+<text x="48" y="80" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Fast hash, or plain text</text>
+<text x="48" y="104" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">No salt, or shared salt</text>
+<text x="48" y="128" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Reversible encryption</text>
+<text x="48" y="152" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Password silently truncated</text>
+<rect x="366" y="24" width="330" height="160" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="390" y="52" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Transport</text>
+<text x="390" y="80" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Login page not over HTTPS</text>
+<text x="390" y="104" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Cookie missing Secure flag</text>
+<text x="390" y="128" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Cookie missing HttpOnly flag</text>
+<text x="390" y="152" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Cookie missing SameSite flag</text>
+<rect x="24" y="208" width="330" height="160" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="48" y="236" fontSize="14" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Session</text>
+<text x="48" y="264" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Predictable token</text>
+<text x="48" y="288" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">No rotation at login</text>
+<text x="48" y="312" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">No idle or absolute timeout</text>
+<text x="48" y="336" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Logout only clears the cookie</text>
+<rect x="366" y="208" width="330" height="160" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="390" y="236" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Lockout and recovery</text>
+<text x="390" y="264" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">No rate limit on login</text>
+<text x="390" y="288" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Lockout locks out real users</text>
+<text x="390" y="312" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Reset token never expires</text>
+<text x="390" y="336" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Security questions as proof</text>
+</svg>
+</Diagram>
+
+The session cluster is marked because it is the one teams most often under test. Password storage gets attention, because it is a well known problem with a well known answer. Session handling gets less attention, because it feels like plumbing, and yet a session token that never rotates, never expires, and survives logout is a credential that never dies, and an attacker who steals one does not need the password at all.
+
+## How to test each part
+
+Testing authentication is a methodical job, and the method matters more than the tools. Work through the parts in order, and for each part, write down what you expect before you test it. A test without an expectation is just clicking around.
+
+**Credential handling.** Register with a long passphrase and check that it is accepted. Register with a short password and check that it is rejected. Register with a password from a public breach list and check that it is rejected. Log in with the full passphrase, then log in with the passphrase plus extra characters, and check whether the extra characters matter. If they do not, the password is being truncated. Try logging in with the username in different cases and check whether the account is treated as the same account. Try an error message for a real account and a fake account and compare them, including the response time.
+
+**Password storage.** This is a code review, not a black box test. Read the registration code and find the hashing call. Check the algorithm and its parameters against the OWASP Password Storage Cheat Sheet values given above. Check that a salt is generated per password, that the comparison is constant time, and that no password is logged, ever, in any log level. Check the database schema and confirm that no plain text password column exists, including in old tables and backups.
+
+**Login endpoint.** Send a series of failed logins for one account and record what happens: when does the delay start, when does the lockout start, how long does it last, and does it lock the account or the address. Send one failed login for many accounts with the same weak password and watch whether anything notices the pattern. Check the response for a valid and an invalid account, and compare the message, the status code, and the timing. Check whether multi-factor authentication is enforced on every route, by logging in with only the password and trying to open a protected page directly.
+
+**Sessions.** Log in, copy the session cookie, log out, and try the copied cookie again. It should fail, because logout should have destroyed the server record. Log in twice, and check whether the two sessions have different tokens. Log in, wait past the idle timeout without activity, and check whether the session has ended. Inspect the cookie flags in the response headers, and confirm HttpOnly, Secure, and SameSite are all present. If the application uses JWTs, decode the token, check the expiry and audience claims, and check whether a token with a tampered signature, or with the signature removed, is rejected.
+
+**Recovery.** Request a reset for a real address and for a fake address, and compare the responses. Use the reset link twice, and check whether the second use fails. Wait past the expiry, if the expiry is documented, and check whether the link has died. Reset the password to a weak one and check whether the policy is enforced. After the reset, check whether the old sessions still work. They should not.
+
+<Callout type="TIP">
+When you test a lab application such as PenTrix, write the expectation down first, in one sentence, before you send the request. "I expect the old session to fail after logout." Then send the request and compare. That habit turns a casual click into a test, and it gives you a record you can show someone else, which is what a good report is made of.
+</Callout>
+
+## What to remember
+
+Authentication breaks in four places: the credential, the storage, the session, and the recovery flow. Store passwords with a slow salted hash, Argon2id first, and never with a fast hash or reversible encryption. Enforce length over complexity, and screen against breached passwords. Rate limit and watch for spraying across accounts, not just brute force against one. Issue random session tokens, rotate them at login, set HttpOnly, Secure, and SameSite, enforce idle and absolute timeouts, and destroy the session server side on logout. Treat recovery as authentication, with single use short lived tokens, and never use security questions as proof. Test each part with an expectation written down first, and the application will tell you where it is weak before an attacker does.
+
+## References
+
+- OWASP Cheat Sheet Series, [Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
+- OWASP Cheat Sheet Series, [Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
+- OWASP Cheat Sheet Series, [Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+- OWASP Cheat Sheet Series, [Credential Stuffing Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Credential_Stuffing_Prevention_Cheat_Sheet)
+- OWASP Cheat Sheet Series, [Forgot Password Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Forgot_Password_Cheat_Sheet.html)
+- OWASP Cheat Sheet Series, [Multifactor Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html)
+- RFC 9110, HTTP Semantics, section on authentication: [rfc-editor.org/rfc/rfc9110.html](https://www.rfc-editor.org/rfc/rfc9110.html)

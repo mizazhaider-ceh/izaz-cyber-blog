@@ -1,0 +1,293 @@
+---
+title: "Understanding Linux firewall rules"
+slug: "understanding-linux-firewall-rules"
+description: "How a packet actually travels through nftables and iptables chains, how to read and write rules that do what you mean, and the mistakes that leave a door open."
+date: "2026-11-18"
+category: "Linux"
+tags: ["linux", "firewall", "nftables", "iptables", "networking"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+A firewall rule is a sentence about a packet: if it looks like this, do that. The sentence is short, and the consequences of getting it wrong are large. A rule that allows the wrong port leaves a service exposed to the whole network. A rule that drops the wrong traffic breaks the service you were trying to protect. And a rule that looks right but sits in the wrong chain never sees the packet at all, which is the quietest failure of all: the firewall is running, the rule is listed, and the traffic passes straight through.
+
+This article explains how a packet actually travels through the Linux firewall, in nftables first and iptables second, how to read and write rules that do what you mean, and which mistakes leave a door open. The commands are standard, verifiable commands, checked against the nftables wiki and the man pages, and the outputs are labelled illustrative where they are shown. Nothing here was presented as tested on a production machine, and the rules are minimal examples for a lab, not a copy and paste configuration for a server you care about.
+
+## The one idea: hooks in the packet path
+
+Linux filtering is built on Netfilter, a framework inside the kernel that lets code inspect packets at fixed points in their journey. Those fixed points are called hooks. A packet travelling through the system passes a sequence of hooks, and at each hook, the firewall can decide to accept it, drop it, or pass it on to the next stage. The chains you write are attached to those hooks. A chain is simply an ordered list of rules that runs when a packet reaches its hook.
+
+The nftables wiki lists the hooks, and each one has a plain meaning. Prerouting sees all incoming packets, before any routing decision has been made, so at that point the system does not yet know whether the packet is addressed to itself or to another machine. Input sees incoming packets that have been routed to the local system, for a process running here. Forward sees incoming packets that are not addressed to the local system, and that will be sent on to another machine, which only matters if the system is acting as a router. Output sees packets that originated from processes on the local machine. Postrouting sees all packets after routing, just before they leave the local system. There is also an ingress hook, available in the netdev family and, since kernel 5.10, in the inet family, which sees packets immediately after they are passed up from the network card, before even prerouting.
+
+That list is the whole map. If you know which hook a packet reaches, you know which chain can see it. If you put a rule in the input chain and the packet is being forwarded, the rule never runs. If you put a rule in the output chain and the packet is arriving from the network, the rule never runs. Most firewall confusion is a confusion about which hook a packet is at, and the diagram in the next section is the picture to keep in your head.
+
+There are three chain types in nftables: filter, which decides whether a packet may pass; nat, which rewrites addresses or ports; and route, which changes routing decisions. This article is about filter chains, because filtering is the job most people mean when they say firewall. NAT is mentioned where it changes which chain sees what, and otherwise left alone.
+
+<Callout type="NOTE">
+nftables is the successor to iptables. The nftables framework replaces iptables, ip6tables, arptables, ebtables, and ipset, and the nft tool replaces the older tools. Many systems still run iptables rules through the iptables-nft compatibility layer, which translates them into the same kernel infrastructure, so the two syntaxes describe the same hooks. Learn nftables for new work, and read iptables because you will meet it in existing systems, tutorials, and exam material for years to come.
+</Callout>
+
+## The packet path, step by step
+
+Follow one packet through the system, and the hooks stop being abstract. There are three journeys a packet can take, and each one visits a different set of hooks.
+
+**A packet arriving for a local process.** It comes in from the network card, hits prerouting, and then the routing decision sends it to the input hook. The input chain runs. If the chain accepts it, the packet reaches the local process, such as a web server or an SSH daemon. The reply from that process is a new packet, which hits the output hook, then postrouting, and leaves.
+
+**A packet arriving to be forwarded.** It comes in, hits prerouting, and the routing decision sends it to the forward hook instead of input. The forward chain runs. If it accepts, the packet goes to postrouting and leaves toward its destination. The input chain never sees it. This is the journey that surprises people: a router's input chain does not filter traffic passing through it, and a rule that blocks a port in the input chain does nothing for forwarded traffic to that port.
+
+**A packet leaving from a local process.** It is created by the process, hits the output hook, then postrouting, and leaves. It never touches prerouting, input, or forward.
+
+The routing decision sits between prerouting and the input and forward hooks, and again between output and postrouting, and it is the fork in the road. Everything before the first routing decision is prerouting. Everything after it is input or forward. Everything the local system sends is output, then postrouting.
+
+<Diagram title="Packet path through the filter hooks" caption="Three journeys through the same hooks. A packet for a local process goes through input. A packet for another machine goes through forward. A packet the system sends itself goes through output.">
+<svg viewBox="0 0 720 420" width="100%" role="img" aria-labelledby="understanding-linux-firewall-rules-d1-title understanding-linux-firewall-rules-d1-desc">
+<title id="understanding-linux-firewall-rules-d1-title">Packet path through firewall hooks</title>
+<desc id="understanding-linux-firewall-rules-d1-desc">A flowchart showing a packet travelling through prerouting, a routing decision, then input or forward for incoming packets and output for local packets, ending at postrouting.</desc>
+<rect x="24" y="24" width="150" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="99" y="46" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Packet arrives</text>
+<text x="99" y="64" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">from the network</text>
+<rect x="254" y="24" width="170" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="339" y="46" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">PREROUTING</text>
+<text x="339" y="64" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">before routing</text>
+<rect x="504" y="24" width="192" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="600" y="46" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Routing decision</text>
+<text x="600" y="64" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">local or forward</text>
+<line x1="174" y1="50" x2="246" y2="50" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#fw-arrow)" />
+<line x1="424" y1="50" x2="496" y2="50" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#fw-arrow)" />
+<rect x="24" y="140" width="170" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="109" y="162" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">INPUT</text>
+<text x="109" y="180" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">for a local process</text>
+<rect x="280" y="140" width="170" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="365" y="162" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">FORWARD</text>
+<text x="365" y="180" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">for another machine</text>
+<rect x="536" y="140" width="160" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="616" y="162" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">OUTPUT</text>
+<text x="616" y="180" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">from a local process</text>
+<line x1="556" y1="76" x2="556" y2="132" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#fw-arrow)" />
+<line x1="556" y1="100" x2="200" y2="100" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="200" y1="100" x2="200" y2="132" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#fw-arrow)" />
+<line x1="556" y1="100" x2="365" y2="100" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="365" y1="100" x2="365" y2="132" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#fw-arrow)" />
+<rect x="24" y="256" width="170" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="109" y="278" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Local process</text>
+<text x="109" y="296" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">web, SSH, DNS</text>
+<rect x="280" y="256" width="170" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="365" y="278" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Next hop</text>
+<text x="365" y="296" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">routed onward</text>
+<rect x="536" y="256" width="160" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="616" y="278" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">POSTROUTING</text>
+<text x="616" y="296" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">just before leaving</text>
+<line x1="109" y1="192" x2="109" y2="248" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#fw-arrow)" />
+<line x1="365" y1="192" x2="365" y2="248" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#fw-arrow)" />
+<line x1="616" y1="192" x2="616" y2="248" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#fw-arrow)" />
+<text x="360" y="356" textAnchor="middle" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Forwarded packets never touch INPUT. Local packets never touch FORWARD.</text>
+<text x="360" y="380" textAnchor="middle" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">A rule in the wrong chain is a rule that never runs.</text>
+<defs>
+<marker id="fw-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
+
+## nftables: tables, chains, rules
+
+In nftables, there are no predefined chains. You create a table, you register base chains in it, and then you add rules to those chains. A table is a namespace that holds chains, rules, sets, and other objects. A base chain is a chain registered at one of the Netfilter hooks, so it sees packets flowing through the stack. A regular chain, by contrast, is only reached when another chain jumps to it, which is how you organise a large ruleset into named sections.
+
+The nftables wiki gives the shape of the command to register a base chain:
+
+```bash
+nft add chain inet filter input { type filter hook input priority 0 \; policy drop \; }
+```
+
+Read it left to right. `inet` is the table family, which covers both IPv4 and IPv6 in one table, so a single ruleset filters both. `filter` is the table name. `input` is the chain name. `type filter` says this chain filters packets. `hook input` attaches it to the input hook. `priority 0` sets its order relative to other chains at the same hook. `policy drop` sets the chain policy: a packet that reaches the end of the chain without matching a rule is dropped.
+
+A minimal filter table for a single host, written in a file and loaded atomically, looks like this:
+
+```nft
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iif lo accept
+    ct state established,related accept
+    ct state invalid drop
+    tcp dport 22 accept
+    tcp dport 80 accept
+    tcp dport 443 accept
+  }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+  }
+  chain output {
+    type filter hook output priority 0; policy accept;
+  }
+}
+```
+
+Each line is a rule, and the order is the logic. Loopback traffic is accepted first, because local services talk to each other over the loopback interface, and a firewall that blocks it breaks the machine in confusing ways. Established and related traffic is accepted next, because replies to connections the machine started, or that it already approved, should not be re-checked. Invalid packets, which connection tracking cannot associate with any known connection, are dropped. Then the new connections the machine wants to accept are listed: SSH on port 22, HTTP on port 80, HTTPS on port 443. Everything else falls off the end of the chain and hits the drop policy.
+
+Load a ruleset like that from a file, and check it before you load it:
+
+```bash
+nft -c -f rules.nft
+nft -f rules.nft
+nft list ruleset
+```
+
+The first command checks the file without changing anything. The second loads it. The third shows what is now running. The check step matters because nftables loads a file as one atomic transaction: either the whole ruleset applies, or none of it does. That is a real improvement over the older tools, where a script could fail halfway and leave a half applied ruleset behind. Use the check, and keep the file in version control, because the file is the firewall, and the running ruleset is only a copy of it.
+
+Managing individual rules follows the same pattern the wiki documents. Add a rule to a chain:
+
+```bash
+nft add rule inet filter input tcp dport 8080 accept
+```
+
+List a table, with numeric output so that names are not resolved while you are reading:
+
+```bash
+nft list table inet filter
+nft -nn list table inet filter
+```
+
+Delete a rule by its handle, which you get by listing with the `-a` flag:
+
+```bash
+nft list ruleset -a
+nft delete rule inet filter input handle 5
+```
+
+Illustrative output for the listing step:
+
+```text
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    iif lo accept
+    ct state established,related accept
+    tcp dport 22 accept
+  }
+}
+```
+
+The handle is assigned by the kernel and uniquely identifies the rule, so deleting by handle is precise in a way that deleting by matching text is not. And a warning that belongs here, in bold in your own notes if nowhere else: `nft flush ruleset` erases the whole ruleset. It is a useful command on a lab machine and a career limiting one on a remote server, where erasing the ruleset can also mean erasing your own access, if the default policy of a chain you just flushed was the only thing still letting your SSH traffic through. If you manage a remote machine, always have a second path in, or a scheduled job that restores a known good ruleset, before you touch the firewall.
+
+## iptables: the older syntax, the same hooks
+
+The iptables syntax is older, and it is the one most tutorials still use. The concepts are identical: tables, chains, rules, a first match wins, and a policy for the end of a chain. The differences are in the defaults and the shape of the commands.
+
+iptables comes with predefined chains, INPUT, OUTPUT, and FORWARD among them, so there is no step where you register a chain at a hook. You append a rule to a chain with `-A`, insert one at a position with `-I`, list the rules with `-L`, and set the policy with `-P`. The same minimal ruleset as above, in iptables form, looks like this:
+
+```bash
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT ACCEPT
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+```
+
+The verdicts are worth naming, because they are the same in both tools. `accept` lets the packet continue. `drop` discards it silently, so the sender gets no reply and must wait for a timeout. `reject` discards it and sends back an error, usually an ICMP message, so the sender learns immediately that the connection was refused. Drop is quieter and slower for an attacker to scan, because a scanner must wait for each timeout, but reject is friendlier for legitimate users, because a mistyped address fails fast instead of hanging. There is no universally right choice. A common pattern is to reject on a LAN, where the users are your own and a fast error helps them, and to drop on a public interface, where the audience includes scanners.
+
+```bash
+iptables -L -n -v --line-numbers
+```
+
+Illustrative output:
+
+```text
+Chain INPUT (policy DROP 0 packets, 0 bytes)
+num   target     prot   source        destination
+1     ACCEPT     all    0.0.0.0/0     0.0.0.0/0
+2     ACCEPT     all    0.0.0.0/0     0.0.0.0/0
+3     ACCEPT     tcp    0.0.0.0/0     0.0.0.0/0     tcp dpt:22
+```
+
+<Callout type="WARNING">
+A firewall change on a remote machine can lock you out of that machine. Before you change the rules on a system you reach over SSH, make sure the new ruleset accepts your SSH connection, test the file with the check command first, and have a second way in, such as a console, a second network path, or a scheduled restore of the previous ruleset. Test every firewall change on a local lab machine first, where a mistake costs a reboot, not a drive to the data centre.
+</Callout>
+
+## Reading a ruleset: the questions to ask
+
+A ruleset is a document, and reading it is a skill. When you open one, ask these questions in order, and write the answers down.
+
+**What is the policy of each chain?** A chain with policy drop is deny by default: everything is forbidden unless a rule allows it. A chain with policy accept is allow by default: everything is permitted unless a rule forbids it. Deny by default is the safer shape for an input chain, because a mistake then blocks traffic instead of allowing it. If the input policy is accept, every missing rule is an open door, and the ruleset must be read as a list of exceptions to an open system, which is a much harder document to trust.
+
+**Which interfaces and addresses do the rules match?** A rule that says `tcp dport 22 accept` allows SSH from anywhere. A rule that says `iifname "eth0" ip saddr 192.168.1.0/24 tcp dport 22 accept` allows SSH only from the management network. The difference is the whole security posture, and it lives in the match conditions, not in the verdict. Look for rules that match a port without matching a source, and ask whether that was intended.
+
+**What is the order?** Rules are checked top to bottom, and the first match decides. A broad accept early in the chain makes every rule below it dead code. A broad drop early in the chain blocks traffic that a later accept was meant to allow. When you add a rule, decide where in the order it belongs, and use insert with a position rather than append when the position matters. When you review a ruleset, read it top to bottom as the packet would travel it, and mark any rule that can never be reached.
+
+**Does the ruleset handle both IPv4 and IPv6?** An inet table in nftables covers both, which is one of its advantages. An iptables ruleset does not: `iptables` filters IPv4, and `ip6tables` filters IPv6, and a system that configures one and forgets the other has a firewall with a hole the size of a protocol. If a service listens on both stacks, and the firewall only filters one, the service is exposed on the other. Check both.
+
+**Does the ruleset allow the replies?** A chain that accepts new SSH connections but drops established traffic will let the connection start and then break it, because the reply packets are dropped. The established and related rule near the top of the chain exists to prevent exactly that. If it is missing, the firewall is broken in a way that looks like a network problem, and the debugging will waste an afternoon.
+
+**What happens to traffic the ruleset never mentions?** That is the policy question again, and it is the last line of defense. A ruleset that is deny by default answers it safely. A ruleset that is allow by default answers it with exposure.
+
+## The mistakes that leave a door open
+
+Most firewall failures are not exotic. They are the same few mistakes, and they are worth listing plainly, because each one has a simple check.
+
+**Allow by default, with a block list.** The input policy is accept, and the rules block a few known bad ports. Every service added later is exposed until someone remembers to block it. The fix is deny by default: policy drop, and an explicit accept for each service that should be reachable.
+
+**A rule that is too broad.** The rule allows a port from any source, when only one network needs it. Or it allows a whole protocol, when only one port needs it. Or it allows all traffic on an interface that faces the internet. Read every rule and ask what the narrowest version of it would be, then use that version.
+
+**The wrong chain.** A rule that blocks a port sits in the input chain, but the traffic is forwarded traffic, so it passes through the forward chain and never sees the rule. Or a rule that should filter incoming traffic sits in the output chain. Draw the packet path first, then place the rule in the chain the packet actually visits.
+
+**Order that kills the rule.** An accept for a broad range sits above a drop for a specific address inside that range, so the drop never runs. Or a drop for a specific case sits below an accept that already matched. Rules are checked top to bottom, and a rule that can never be reached is not a rule, it is a comment.
+
+**IPv6 forgotten.** The IPv4 rules are careful and the IPv6 rules do not exist. The service listens on both, and the attacker uses the stack without a firewall. Use an inet table in nftables so that one ruleset covers both, or configure ip6tables with the same care as iptables, and check both with the same review.
+
+**Loopback blocked.** A rule drops everything before the loopback accept, or the loopback accept is missing, and local services that talk to each other over 127.0.0.1 start failing in ways that look like application bugs. Accept loopback first, and keep it first.
+
+**Stateful filtering forgotten.** The ruleset checks every packet as if it were a new connection, with no established and related rule, so replies are dropped or must be explicitly allowed one by one. The ruleset becomes long, fragile, and easy to get wrong. Accept established and related traffic early, and let the state machine do the work.
+
+**No logging, no counters.** The ruleset drops traffic silently, with no log rule and no counters, so nobody can tell whether a drop was an attack or a misconfiguration. Add counters to the rules you care about, and a log rule for traffic that is dropped unexpectedly, so that the firewall can tell you what it is doing. Read the counters with the listing commands, and treat a counter that never moves as a rule that never runs.
+
+<Callout type="TIP">
+When you inherit a ruleset, do not start by adding rules. Start by listing it, with counters, and reading it top to bottom as a packet would travel it. Note the policy of each chain, the order of the rules, and any rule whose counter is zero after a week of traffic. The zero counters are the rules that never run, and they are often the ones someone is relying on.
+</Callout>
+
+## Defense in depth: the firewall is one layer
+
+A host firewall is one layer of defense, and it is a mistake to treat it as the only one. A service that listens on all interfaces is exposed to every network the machine touches, and a firewall rule is the only thing standing between it and the internet. A service that binds to localhost only is not reachable from the network at all, and the firewall is a second layer behind that choice. A service that requires authentication is protected even if the firewall lets the traffic through, and the firewall is a second layer behind that too.
+
+The layer stack, from the outside in, looks like this: the network firewall at the perimeter, the host firewall on the machine, the service binding, which decides which interfaces the service listens on, and the application authentication, which decides who may use it. Each layer catches what the previous one missed. A mistake in one layer is survivable if the next layer holds. A system with only one layer has no margin at all.
+
+<Diagram title="Defense layers, from the network to the application" caption="Each layer catches what the one before it missed. A firewall rule is one layer, not the whole defense, and a service that binds to localhost is protected even if the firewall lets the traffic through.">
+<svg viewBox="0 0 720 380" width="100%" role="img" aria-labelledby="understanding-linux-firewall-rules-d2-title understanding-linux-firewall-rules-d2-desc">
+<title id="understanding-linux-firewall-rules-d2-title">Defense in depth layer stack</title>
+<desc id="understanding-linux-firewall-rules-d2-desc">A layer stack of five defense layers, from the network firewall at the top to application authentication at the bottom, with what each layer checks.</desc>
+<rect x="24" y="24" width="672" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="48" y="48" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Network firewall</text>
+<text x="48" y="68" fontSize="12" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">perimeter, blocks by network and port</text>
+<rect x="24" y="96" width="672" height="56" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="48" y="120" fontSize="14" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Host firewall</text>
+<text x="48" y="140" fontSize="12" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">nftables or iptables, this article</text>
+<rect x="24" y="168" width="672" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="48" y="192" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Service binding</text>
+<text x="48" y="212" fontSize="12" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">localhost only, or a single interface</text>
+<rect x="24" y="240" width="672" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="48" y="264" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Application authentication</text>
+<text x="48" y="284" fontSize="12" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">who may use the service at all</text>
+<rect x="24" y="312" width="672" height="40" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="48" y="336" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Logging and monitoring: what got dropped, what got through, and why.</text>
+</svg>
+</Diagram>
+
+That stack is also the answer to the question of what to fix first when time is short. Bind the service to the smallest interface it needs. Then write the firewall rule. Then check the authentication. A service that only listens on localhost and requires a password is safe even if the firewall rule is wrong. A service that listens on every interface with no authentication is exposed even if the firewall rule is right, because a single firewall mistake is all it takes.
+
+## A safe way to practice
+
+The only safe place to practice firewall rules is a lab machine you can afford to break. A virtual machine with two network interfaces, one host only and one internal, is enough: one interface to reach it from your own machine, and one to test what the firewall does to traffic between machines. Take a snapshot before you start, so that a mistake costs a restore, not a rebuild.
+
+## What to remember
+
+A packet travels through hooks, and a chain is a list of rules attached to one hook. Prerouting sees everything before routing, input sees packets for local processes, forward sees packets for other machines, output sees packets the local system sends, and postrouting sees everything just before it leaves. In nftables, create a table, register base chains at the hooks, and write rules in the order the packet will meet them, with a drop policy at the end. Accept loopback first, accept established and related traffic next, drop invalid packets, then allow the specific new connections the machine needs, and nothing else. In iptables the same logic uses the predefined chains and the same verdicts. Read a ruleset top to bottom as a packet would travel it, check the policy, the order, the source matches, and both protocol stacks, and remember that the firewall is one layer among several: binding and authentication stand behind it, and they are what save you when a rule is wrong.
+
+## References
+
+- nftables wiki, [Configuring chains](https://wiki.nftables.org/wiki-nftables/index.php/Configuring_chains)
+- nftables wiki, [Simple rule management](https://wiki.nftables.org/wiki-nftables/index.php/Simple_rule_management)
+- nftables wiki, [Quick reference, nftables in 10 minutes](https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes)
+- Netfilter project, [nftables manual page](https://www.netfilter.org/projects/nftables/manpage.html)
+- [iptables manual page](https://man7.org/linux/man-pages/man8/iptables.8.html)
