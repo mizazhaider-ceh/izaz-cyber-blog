@@ -1,0 +1,239 @@
+---
+title: "Understanding HTTP request smuggling"
+slug: "understanding-http-request-smuggling"
+description: "How two servers disagreeing about where one request ends turns one request into two, why that matters, and how to think about it defensively."
+date: "2026-11-18"
+category: "Web Security"
+tags: ["http", "request-smuggling", "web-security", "owasp"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+HTTP is a protocol built on trust between parsers. A client sends a request, a server reads it, and both sides agree on where that request ends and the next one begins. That agreement sounds trivial, and most of the time it is. But in a modern web deployment, a request rarely travels from a browser straight to one server. It passes through a front-end server, often a reverse proxy, a load balancer, or a content delivery network, and then on to a back-end server that runs the application. If those two servers disagree about where one request ends, an attacker can turn one request into two. That is HTTP request smuggling, and it is one of the most interesting vulnerability classes in web security because the bug lives in the gap between two correct-looking systems.
+
+This article explains the mechanism from first principles, walks through the four classic variants, looks at what an attacker can do with a smuggled request, and then turns to the defensive side: how to think about detection, how to fix the root cause, and what to check in your own stack. Everything here is a concept explainer. The example requests are illustrative, labelled as such, and meant to be read, not copied into a live system. Testing for this flaw belongs in a lab you own, or on a system you have explicit written permission to test.
+
+## Why one request needs a boundary
+
+HTTP/1.1 is a text protocol carried over a TCP connection, and TCP is a stream. A stream has no built-in message boundaries. Bytes arrive in order, but nothing in TCP itself says "this request ends here". HTTP has to define that boundary itself, using headers in the request.
+
+There are two standard ways to declare the length of a request body. The first is the `Content-Length` header, which states the body size as an exact number of bytes. If a request says `Content-Length: 13`, the body is exactly 13 bytes long, and the next request starts at byte 14. The second is `Transfer-Encoding: chunked`, which sends the body as a series of chunks. Each chunk starts with its size in hexadecimal, followed by that many bytes of data, and the body ends with a zero-length chunk. The receiver reads chunks until it sees the zero chunk, and then it knows the body is finished.
+
+Both mechanisms are well defined on their own. The trouble starts when a single request carries both of them. RFC 9112, the specification for HTTP/1.1, is clear about this case. A sender must not send a `Content-Length` header in a message that also contains a `Transfer-Encoding` header. A recipient that sees both should treat the `Transfer-Encoding` as the authority, and the specification says such a message might indicate an attempt at request smuggling and ought to be handled as an error. A server may reject a request that contains both headers, or process it using `Transfer-Encoding` alone, but either way it must close the connection afterwards, so that no leftover bytes can be read as a new request.
+
+That rule exists precisely because two parsers can read the same bytes differently. If the front-end server trusts `Content-Length` and the back-end server trusts `Transfer-Encoding`, they will draw the boundary in different places. The bytes between the two boundaries belong to the first request in one server's view and to a second, hidden request in the other server's view. That hidden request is the smuggled request.
+
+<Callout type="NOTE">
+A single server is not enough for this flaw. Request smuggling needs a chain: a front-end that forwards requests and a back-end that reads them from a shared, reused connection. If your deployment is one server talking directly to clients, the classic smuggling variants do not apply in the same way.
+</Callout>
+
+## The front-end and back-end problem
+
+To see why the chain matters, picture a normal deployment. A browser opens a connection to a front-end server. The front-end inspects the request, perhaps checks a header, applies a rule, and forwards the request over a persistent connection to a back-end server. The back-end answers, the front-end passes the answer back, and the connection stays open for the next request. Reusing connections like this is called keep-alive, and it is normal and efficient. It also means that several requests from different users can travel over the same front-end to back-end connection, one after another.
+
+Now imagine an attacker sends a request that the front-end reads as one complete request, but the back-end reads as one complete request plus the start of another. The front-end forwards the whole thing, believing it sent one request. The back-end processes the first part, answers it, and then finds extra bytes still sitting in its buffer. It does not discard them. It treats them as the beginning of the next request. When the next real user request arrives on that same connection, the back-end glues the leftover bytes onto the front of it. The result is a request the victim never sent, built partly from attacker-controlled bytes and partly from the victim's own request, including, in the worst case, the victim's cookies and headers.
+
+That is the core idea, and it explains why request smuggling is so powerful. The attacker does not need to break the application logic directly. They poison the shared connection, and the back-end does the rest. The front-end never sees the smuggled request as a separate request, so front-end checks, such as access control rules, logging, or a web application firewall, may never inspect it at all.
+
+## A worked example: CL.TE
+
+The classic variants are named after which header each server trusts. In a CL.TE desync, the front-end uses `Content-Length` and the back-end uses `Transfer-Encoding`. The name reads left to right: front-end first, back-end second.
+
+Consider this illustrative request. It is a teaching example, not a payload to send anywhere:
+
+```http
+POST /search HTTP/1.1
+Host: example.com
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 13
+Transfer-Encoding: chunked
+
+0
+
+GET /admin HTTP/1.1
+Host: example.com
+X-Ignore: X
+```
+
+Walk through it slowly. The front-end reads `Content-Length: 13` and treats the next 13 bytes as the body. It forwards the whole request to the back-end and waits for the response. The back-end, however, reads `Transfer-Encoding: chunked`. It sees the chunk size `0`, which means the body ends immediately. The back-end therefore believes the first request is finished, and it has leftover bytes in its buffer: the lines starting with `GET /admin`.
+
+The back-end answers the first request, then looks at the leftover bytes. It sees what looks like a new request for `/admin`, with a header `X-Ignore: X` and no body yet. It waits for the rest of that request. When the next user sends a request over the same connection, the back-end treats that user's bytes as the continuation of the smuggled request. The smuggled request now carries the victim's headers, and if the victim is logged in, their session cookie travels with it. The back-end processes it as a request for `/admin`, and the response goes back to the victim, or, in some variants, the attacker can arrange to read it.
+
+The exact outcome depends on the application. Sometimes the smuggled request simply corrupts the next request and produces an error. Sometimes it bypasses an access check, because the front-end checked the first request, which looked harmless, and never saw the second one. Sometimes it lets the attacker capture another user's request, including their session cookie, by smuggling a request that stores the following request's contents somewhere the attacker can read, such as a comment field or a search history page. PortSwigger's Web Security Academy includes labs that demonstrate exactly that capture pattern in a controlled environment, and they are a good place to study the mechanics safely.
+
+<Diagram title="CL.TE desync, step by step" caption="The front-end reads the request by Content-Length and forwards it whole. The back-end reads it by Transfer-Encoding, finishes early, and treats the leftover bytes as a second request.">
+<svg viewBox="0 0 720 380" width="100%" role="img" aria-labelledby="understanding-http-request-smuggling-d1-title understanding-http-request-smuggling-d1-desc">
+<title id="understanding-http-request-smuggling-d1-title">CL.TE desync sequence</title>
+<desc id="understanding-http-request-smuggling-d1-desc">A sequence diagram showing a client, a front-end server, and a back-end server, where the back-end reads a hidden second request out of the first request.</desc>
+<rect x="24" y="24" width="160" height="48" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="104" y="44" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Client</text>
+<text x="104" y="62" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">attacker browser</text>
+<rect x="280" y="24" width="160" height="48" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="44" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Front-end</text>
+<text x="360" y="62" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">uses Content-Length</text>
+<rect x="536" y="24" width="160" height="48" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="616" y="44" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Back-end</text>
+<text x="616" y="62" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">uses Transfer-Encoding</text>
+<line x1="104" y1="72" x2="104" y2="352" stroke="var(--border)" strokeWidth="1" />
+<line x1="360" y1="72" x2="360" y2="352" stroke="var(--border)" strokeWidth="1" />
+<line x1="616" y1="72" x2="616" y2="352" stroke="var(--border)" strokeWidth="1" />
+<line x1="104" y1="108" x2="352" y2="108" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#rs-arrow)" />
+<rect x="132" y="92" width="196" height="18" fill="var(--background)" />
+<text x="230" y="105" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">POST, CL 13 plus TE chunked</text>
+<line x1="368" y1="152" x2="608" y2="152" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#rs-arrow)" />
+<rect x="396" y="136" width="164" height="18" fill="var(--background)" />
+<text x="478" y="149" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">forwards whole request</text>
+<line x1="608" y1="196" x2="368" y2="196" stroke="var(--success)" strokeWidth="1.5" strokeDasharray="5,4" markerEnd="url(#rs-arrow)" />
+<rect x="396" y="180" width="164" height="18" fill="var(--background)" />
+<text x="478" y="193" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">answers first request</text>
+<rect x="500" y="228" width="196" height="52" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="598" y="250" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Leftover bytes stay</text>
+<text x="598" y="268" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">read as GET /admin</text>
+<line x1="360" y1="308" x2="608" y2="308" stroke="var(--primary)" strokeWidth="1.5" markerEnd="url(#rs-arrow)" />
+<rect x="396" y="292" width="164" height="18" fill="var(--background)" />
+<text x="478" y="305" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">victim request arrives</text>
+<text x="360" y="344" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">glued onto smuggled prefix</text>
+<defs>
+<marker id="rs-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
+
+The diagram shows the essential shape: one request in, two requests understood. Notice that the front-end is not broken in an obvious way. It did its job as it understood it. The back-end is not broken in an obvious way either. It followed the chunked encoding rules. The vulnerability is the disagreement, and that is why it is hard to spot by reviewing either server alone.
+
+## The four classic variants
+
+Once you understand CL.TE, the other variants follow the same logic with the roles swapped or the header disguised.
+
+**CL.TE: front-end uses Content-Length, back-end uses Transfer-Encoding.** This is the variant walked through above. The front-end forwards the full body, the back-end stops at the zero chunk, and the rest becomes a smuggled request.
+
+**TE.CL: front-end uses Transfer-Encoding, back-end uses Content-Length.** Here the front-end reads the chunked body correctly and forwards it, but the back-end reads only as many bytes as `Content-Length` says. If the chunked body is longer than that count, the back-end leaves the remainder in its buffer, and that remainder becomes the smuggled request. The roles are reversed, but the shape is the same: two parsers, two boundaries, one leftover.
+
+**TE.TE: both servers support Transfer-Encoding, but one can be tricked into ignoring it.** This variant relies on obfuscation. The attacker sends a `Transfer-Encoding` header that one server recognises and the other does not, for example by adding a space before the colon, a tab character, an unusual capitalisation, or a duplicate header. One server treats the request as chunked, the other treats it as a plain request with a `Content-Length`, and the desync follows. TE.TE is a reminder that the problem is not only which header wins, but whether each parser even sees the header the same way.
+
+**CL.CL: both servers use Content-Length, but they disagree on the value.** This happens when a request carries two `Content-Length` headers with different values, or a single header with a value one server parses differently from the other, such as a value with extra whitespace or a comma-separated pair. One server reads one length, the other reads the other length, and again the boundaries split. RFC 9110 notes that a recipient seeing the same value repeated may either reject the message or replace the field with the single value, but conflicting values are a different and dangerous case, and strict servers reject them.
+
+There is also a related family worth knowing about, even though it is not one of the four: the CL.0 variant, where a back-end ignores `Content-Length` on endpoints that do not expect a body, such as a static file, a redirect, or a health check. The front-end forwards the body, the back-end treats the request as having no body, and the body bytes become a new request. The OWASP Web Security Testing Guide documents CL.0 alongside the classic variants, and it is a good example of how a desync can hide on an endpoint that looks boring.
+
+<Diagram title="The four variants, side by side" caption="Each variant is the same root cause with a different disagreement. The front-end and the back-end each pick a boundary, and the gap between them is the smuggled request.">
+<svg viewBox="0 0 720 400" width="100%" role="img" aria-labelledby="understanding-http-request-smuggling-d2-title understanding-http-request-smuggling-d2-desc">
+<title id="understanding-http-request-smuggling-d2-title">Four request smuggling variants compared</title>
+<desc id="understanding-http-request-smuggling-d2-desc">Four lanes comparing CL.TE, TE.CL, TE.TE, and CL.CL, showing what the front-end sees and what the back-end sees in each case.</desc>
+<text x="24" y="28" fontSize="12" fontWeight="600" fill="var(--text-muted)" fontFamily="var(--font-display), sans-serif">VARIANT</text>
+<text x="180" y="28" fontSize="12" fontWeight="600" fill="var(--text-muted)" fontFamily="var(--font-display), sans-serif">FRONT-END SEES</text>
+<text x="440" y="28" fontSize="12" fontWeight="600" fill="var(--text-muted)" fontFamily="var(--font-display), sans-serif">BACK-END SEES</text>
+<line x1="24" y1="36" x2="696" y2="36" stroke="var(--border)" strokeWidth="1" />
+<rect x="24" y="52" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="84" y="78" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">CL.TE</text>
+<text x="84" y="98" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">classic</text>
+<rect x="180" y="52" width="220" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="290" y="78" textAnchor="middle" fontSize="12" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">One request, CL length</text>
+<text x="290" y="98" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">forwards whole body</text>
+<rect x="440" y="52" width="256" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="568" y="78" textAnchor="middle" fontSize="12" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Ends at zero chunk</text>
+<text x="568" y="98" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">leftover becomes request 2</text>
+<rect x="24" y="140" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="84" y="166" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">TE.CL</text>
+<text x="84" y="186" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">reversed</text>
+<rect x="180" y="140" width="220" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="290" y="166" textAnchor="middle" fontSize="12" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">One request, chunked</text>
+<text x="290" y="186" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">forwards chunked body</text>
+<rect x="440" y="140" width="256" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="568" y="166" textAnchor="middle" fontSize="12" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Reads CL bytes only</text>
+<text x="568" y="186" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">rest becomes request 2</text>
+<rect x="24" y="228" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="84" y="254" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">TE.TE</text>
+<text x="84" y="274" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">obfuscated</text>
+<rect x="180" y="228" width="220" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="290" y="254" textAnchor="middle" fontSize="12" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Sees chunked encoding</text>
+<text x="290" y="274" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">header recognised</text>
+<rect x="440" y="228" width="256" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="568" y="254" textAnchor="middle" fontSize="12" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Ignores obfuscated TE</text>
+<text x="568" y="274" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">falls back to CL, splits</text>
+<rect x="24" y="316" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="84" y="342" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">CL.CL</text>
+<text x="84" y="362" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">two lengths</text>
+<rect x="180" y="316" width="220" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="290" y="342" textAnchor="middle" fontSize="12" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Reads first length</text>
+<text x="290" y="362" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">forwards that many bytes</text>
+<rect x="440" y="316" width="256" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="568" y="342" textAnchor="middle" fontSize="12" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Reads second length</text>
+<text x="568" y="362" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">boundary differs, splits</text>
+</svg>
+</Diagram>
+
+A useful way to remember the set is that every variant is the same sentence with different nouns: two parsers, one stream, two boundaries. If you can explain where each parser draws the line, you can work out which variant you are looking at, even if you have never seen that exact obfuscation before.
+
+## What an attacker can do with it
+
+A smuggled request is a building block, not an end goal. What it unlocks depends on the application behind the back-end, and on what the next request on the connection happens to be. The common impacts, as described by OWASP and PortSwigger, fall into a few patterns.
+
+The first is **bypassing front-end security controls**. A front-end may enforce access control, for example by refusing requests to `/admin` unless the user is logged in as an administrator. If the attacker smuggles a request for `/admin` inside a request the front-end already approved, the front-end never inspects the smuggled request. The back-end receives it directly, and if the back-end trusts the front-end to have done the check, the request succeeds. This is a design smell worth remembering: security checks that live only at the front-end are checks the back-end cannot see, and a desync removes them from the path entirely.
+
+The second is **capturing other users' requests**. By smuggling a request that causes the application to store the next request it receives, the attacker can read the victim's request, including headers such as the session cookie. PortSwigger's lab on capturing other users' requests demonstrates this with a comment feature: the smuggled request posts a comment, and the victim's request, glued onto it, becomes the comment text. The attacker then reads the stored comment and extracts the cookie. The same idea works anywhere the application reflects or stores part of a request.
+
+The third is **web cache poisoning**. If the smuggled request changes a response that gets cached, the poisoned response can be served to many users. For example, a smuggled request might cause the cache to store a response with a malicious script, or a redirect to an attacker-controlled page. Cache poisoning turns a single desync into an impact on every user who fetches that cached resource.
+
+The fourth is **session hijacking and account takeover**, which is usually the consequence of the second pattern rather than a separate technique. A captured session cookie lets the attacker act as the victim, and the impact then depends on what the victim can do: read private data, change settings, or perform actions in their name.
+
+<Callout type="WARNING">
+Testing for request smuggling on a live system can corrupt real users' requests. A careless probe can poison a shared connection and break or hijack traffic that belongs to someone else. That is why detection is done with timing probes and non-destructive techniques in a lab first, and only on systems you own or have explicit permission to test.
+</Callout>
+
+## How detection works, in principle
+
+Detecting a desync without causing harm is a skill of its own, and the standard approach is timing. The idea is simple to state and careful to execute. You send a request that, if a desync exists, will leave the back-end waiting for more bytes, because the smuggled request is incomplete. The back-end holds the connection open, waiting for the rest. If you then send a normal request on the same connection, it arrives late, or the response is delayed. That delay is the signal.
+
+PortSwigger describes timing as the most generally effective way to detect smuggling, and its Web Security Academy labs teach it through differential responses: send the same probe twice, once with a smuggled prefix that should produce a 404 and once without, and compare. The Burp Suite extension HTTP Request Smuggler automates much of this probing, testing the CL.TE, TE.CL, and TE.TE variants and reporting which one, if any, produces a desync. The extension exists because manual probing is fiddly: in Burp Repeater, you must disable the "Update Content-Length" option, or Burp will recalculate the header on every send and destroy the deliberate mismatch.
+
+## HTTP/2 and the downgrade problem
+
+A natural question is whether HTTP/2 fixes this. HTTP/2 is a binary protocol with explicit framing: each request is a stream of frames with a declared length, and there is no `Transfer-Encoding: chunked` in HTTP/2 at all. That removes the CL versus TE ambiguity at the HTTP/2 layer itself. If the whole chain spoke HTTP/2 end to end, the classic variants would not apply.
+
+The catch is the word "whole". In practice, many deployments accept HTTP/2 from the client but speak HTTP/1.1 to the back-end, because the back-end, or the software in front of it, only supports HTTP/1.1. The front-end translates the HTTP/2 request into an HTTP/1.1 request, and that translation is a new place where a boundary can be drawn wrong. An attacker can inject a `Content-Length` or `Transfer-Encoding` header into an HTTP/2 request, often through a header value that contains a carriage return and line feed sequence, and the translation layer may pass it through into the HTTP/1.1 request it builds. The back-end then sees a request with both framing headers, and the classic desync returns, this time through a downgrade. PortSwigger's research and labs on HTTP/2 request smuggling cover this family, including H2.CL and H2.TE variants, and the lesson is the same as before: the boundary problem moves, it does not disappear, until every hop agrees on framing.
+
+## How to fix it
+
+The fix for request smuggling is not a single setting. It is a set of choices that all push in the same direction: make every hop agree on where each request ends, and reject anything ambiguous.
+
+**Use HTTP/2 end to end where you can.** If both the front-end and the back-end support HTTP/2, and the connection between them uses it, the binary framing removes the CL versus TE choice entirely. This is the strongest fix, and it is the one OWASP and PortSwigger both recommend first. It is not always possible, because some back-ends only speak HTTP/1.1, but where it is possible, it is the cleanest answer.
+
+**Reject ambiguous requests at the front-end.** On any remaining HTTP/1.1 hop, the front-end should reject a request that carries both `Content-Length` and `Transfer-Encoding`, or conflicting `Content-Length` values, or an unrecognised `Transfer-Encoding`, with a 400 response and close the connection. RFC 9112 supports this directly: a message with both headers ought to be handled as an error, and the connection must be closed afterwards. Closing matters, because it discards any leftover bytes that could otherwise be read as a new request.
+
+**Normalise before forwarding.** If the front-end must accept HTTP/1.1, it should normalise each request to a single framing before it forwards it, for example by always using `Content-Length` or always using chunked encoding, and by stripping the other header. Normalisation means the back-end never sees an ambiguous request, even if the client sent one. The front-end and the back-end then agree by construction, because only one framing reaches the back-end.
+
+**Do not reuse connections across trust boundaries without care.** Keep-alive reuse is what lets a smuggled request meet a victim's request. Some deployments reduce the risk by not reusing back-end connections for requests from different clients, or by limiting how long a connection is reused. That is a mitigation, not a fix, and it costs performance, but it is worth knowing as a lever when a full fix is not immediately possible.
+
+**Put security checks in the back-end too.** A front-end access check is useful, but it should not be the only check. The back-end should enforce authorisation itself, so that a request which bypasses the front-end still fails at the back-end. This is defence in depth, and it limits the impact of a desync even if one occurs.
+
+**Keep parsers strict and up to date.** Many desyncs depend on a parser accepting something it should reject: an obfuscated header, a duplicate length, a header with odd whitespace. Strict parsing, and keeping the front-end and back-end software updated, closes the specific obfuscations that TE.TE and CL.CL rely on. When a vendor documents that a version rejects ambiguous framing, that is a meaningful fix, not a cosmetic one.
+
+<Callout type="MITIGATION">
+The single most useful question to ask about any deployment is: does every hop agree on framing, and what happens to a request that carries both Content-Length and Transfer-Encoding? If the answer is "we reject it with 400 and close the connection", you are in good shape. If the answer is "we are not sure", that is the gap to close first.
+</Callout>
+
+## A checklist for your own stack
+
+If you run a site, or you are learning by building one in a lab, this is a practical order to work through.
+
+1. **Map the chain.** List every hop between the client and the application: CDN, load balancer, reverse proxy, web application firewall, application server. Write down which protocol each hop speaks to the next, HTTP/1.1 or HTTP/2.
+2. **Check the framing rule on each hop.** For each HTTP/1.1 hop, find out what the server does with a request carrying both headers. The documentation for the server, or a quick test in a lab, will tell you. Reject and close is the answer you want.
+3. **Test the downgrade path.** If the front-end accepts HTTP/2 and the back-end uses HTTP/1.1, check how headers are translated. Look for any path where a client-supplied header can introduce a `Content-Length` or `Transfer-Encoding` into the translated request.
+4. **Review where authorisation lives.** For each sensitive endpoint, confirm the back-end checks authorisation itself, rather than trusting that the front-end already did.
+5. **Look at connection reuse.** Understand whether back-end connections are shared across clients, and for how long. That tells you how far a single desync could reach.
+6. **Practise in a lab.** PortSwigger's Web Security Academy has a full set of request smuggling labs, from the basic CL.TE and TE.CL differentials through to cache poisoning, capturing other users' requests, and HTTP/2 smuggling. Working through them in the lab is the safest way to build intuition for the timing signals and the response differences that indicate a desync.
+
+## What to remember
+
+Request smuggling is not a bug in one server. It is a disagreement between two servers about a boundary that HTTP/1.1 leaves to headers to define. The fix is agreement: one framing, enforced everywhere, with ambiguous requests rejected and the connection closed. The variants, CL.TE, TE.CL, TE.TE, and CL.CL, are four ways the same disagreement can arise, and the HTTP/2 downgrade family is the same disagreement wearing a new protocol's clothes.
+
+If you remember one sentence from this article, make it this one: a request is only as safe as the agreement between every parser that reads it. When that agreement breaks, one request becomes two, and the second one is written by the attacker.
+
+## References
+
+- RFC 9112, HTTP/1.1, June 2022, sections 6.1, 6.2, 6.3, and 11.2: https://www.rfc-editor.org/rfc/rfc9112.html
+- OWASP Web Security Testing Guide, HTTP Request Smuggling (WSTG-INJT-16): https://wstg.owasp.org/latest/4-Web_Application_Security_Testing/07-Injection/16-HTTP_Request_Smuggling/
+- PortSwigger Web Security Academy, HTTP request smuggling, lab on exploiting request smuggling to capture other users' requests: https://portswigger.net/web-security/request-smuggling/exploiting/lab-capture-other-users-requests
+- PortSwigger Web Security Academy, HTTP/2 request smuggling via CRLF injection lab: https://portswigger.net/web-security/request-smuggling/advanced/lab-request-smuggling-h2-request-smuggling-via-crlf-injection
+- James Kettle, HTTP Desync Attacks: Request Smuggling Reborn, PortSwigger Research, as referenced by the OWASP Web Security Testing Guide.

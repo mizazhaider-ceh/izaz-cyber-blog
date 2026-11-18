@@ -1,0 +1,267 @@
+---
+title: "Exploring DNS enumeration"
+slug: "exploring-dns-enumeration"
+description: "What DNS actually reveals about an organisation, from records to zone transfers to brute forcing, and what the defender sees on the other side."
+date: "2026-11-18"
+category: "Network Security"
+tags: ["dns", "enumeration", "reconnaissance", "networking"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+Every organisation that runs a website, sends email, or hosts a service leaves a map of itself in public. That map is DNS, the Domain Name System, and it is public by design. DNS has to answer questions from anyone on the internet, because that is its job: turn a name like `www.example.com` into an address a computer can connect to. The same answers that make the internet work also tell an enumerator where the mail servers live, which names exist, how the zone is organised, and sometimes, through a misconfiguration, the entire contents of the zone.
+
+DNS enumeration is the practice of asking those questions systematically, and reading the answers carefully. It is one of the first steps in reconnaissance, because it is quiet, it uses the infrastructure the target already publishes, and it often reveals more than the target realises. This article explains what DNS is, what each record type reveals, how a query travels from your machine to an authoritative server, and how the classic enumeration techniques work: record queries, zone transfers, reverse lookups, and brute forcing. It also looks at the other side: what the defender sees in the logs when someone enumerates them, and how to close the gaps.
+
+All example domains in this article are `example.com` or clearly fictional names. No real domain is enumerated here. The commands are standard, the outputs are labelled illustrative, and the techniques are described for use on systems you own or have explicit permission to test.
+
+## What DNS is, in one paragraph
+
+DNS is a distributed, hierarchical database that maps names to data. When you type a domain into a browser, a resolver asks a chain of servers where that name lives, and each server answers with what it knows or points to the next server that might know. The system is defined by RFC 1034, which describes the concepts and facilities, and RFC 1035, which describes the implementation and the protocol. Both date from November 1987, and they remain the foundation of DNS today, even though many later specifications have added record types, security extensions, and new behaviours on top.
+
+The hierarchy has three levels that matter for enumeration. At the top are the root servers, which know where the top-level domain servers live. Below them are the top-level domain servers, for endings such as `.com`, which know which authoritative servers handle a given domain. At the bottom are the authoritative servers, which hold the actual records for a domain. A resolver walks down that chain, asking each level where to go next, until it reaches the server that can answer authoritatively.
+
+DNS runs on port 53, over UDP for most queries and over TCP for large responses and for zone transfers. That detail matters for enumeration, because a zone transfer, which is the most complete form of enumeration, always uses TCP, and a defender watching TCP port 53 traffic can see it clearly.
+
+## How a query travels
+
+A DNS query is a small journey, and understanding the journey explains why each server in the chain matters. When your machine needs to resolve `www.example.com`, it asks its configured resolver, usually run by your network or your internet provider. The resolver checks its cache. If it has a recent answer, it returns it immediately. If not, it starts the walk.
+
+First, the resolver asks a root server for `www.example.com`. The root does not know the address, but it knows which servers handle `.com`, so it returns a referral to the `.com` servers. Next, the resolver asks a `.com` server, which returns a referral to the authoritative servers for `example.com`. Finally, the resolver asks one of those authoritative servers, which returns the actual record, an address for `www.example.com`. The resolver caches the answer and returns it to your machine, which can then connect.
+
+That walk is called iterative resolution when the resolver does the walking, and recursive resolution when your machine asks the resolver to do the whole job and return a final answer. Most clients use recursive queries to their resolver, and the resolver uses iterative queries to the rest of the chain. The distinction matters for enumeration because the answers you get depend on who you ask: a recursive resolver may return a cached answer, while an authoritative server returns the live record from the zone itself.
+
+<Diagram title="A DNS query through the chain" caption="The resolver walks down from the root to the top-level domain server to the authoritative server, then returns the answer to the client. Each step is a referral except the last, which is the answer.">
+<svg viewBox="0 0 720 380" width="100%" role="img" aria-labelledby="exploring-dns-enumeration-d1-title exploring-dns-enumeration-d1-desc">
+<title id="exploring-dns-enumeration-d1-title">DNS query data flow diagram</title>
+<desc id="exploring-dns-enumeration-d1-desc">A data flow diagram showing a DNS query travelling from a client through a resolver, root server, top-level domain server, and authoritative server.</desc>
+<rect x="24" y="40" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="84" y="68" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Client</text>
+<text x="84" y="88" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">your machine</text>
+<rect x="168" y="40" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="228" y="68" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Resolver</text>
+<text x="228" y="88" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">recursive</text>
+<rect x="312" y="40" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="372" y="68" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Root</text>
+<text x="372" y="88" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">referral</text>
+<rect x="456" y="40" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="516" y="68" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">TLD server</text>
+<text x="516" y="88" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">.com referral</text>
+<rect x="600" y="40" width="96" height="64" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="648" y="68" textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Authoritative</text>
+<text x="648" y="88" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">holds the zone</text>
+<line x1="144" y1="72" x2="168" y2="72" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="288" y1="72" x2="312" y2="72" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="432" y1="72" x2="456" y2="72" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="576" y1="72" x2="600" y2="72" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<rect x="36" y="140" width="648" height="96" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="60" y="168" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">What each step returns</text>
+<text x="60" y="192" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Root: a referral to the .com servers, not an answer.</text>
+<text x="60" y="212" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">TLD server: a referral to the authoritative servers for example.com.</text>
+<text x="60" y="232" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Authoritative server: the record itself, from the zone.</text>
+<line x1="648" y1="104" x2="648" y2="140" stroke="var(--success)" strokeWidth="1.5" strokeDasharray="5,4" />
+<line x1="648" y1="236" x2="648" y2="272" stroke="var(--success)" strokeWidth="1.5" strokeDasharray="5,4" />
+<rect x="360" y="272" width="336" height="64" rx="6" fill="var(--surface)" stroke="var(--success)" strokeWidth="1.5" />
+<text x="528" y="300" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--success)" fontFamily="var(--font-display), sans-serif">Answer returns to client</text>
+<text x="528" y="320" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">resolver caches it first</text>
+</svg>
+</Diagram>
+
+The diagram makes one point clearly: only the authoritative server holds the zone. Everything above it is a signpost. That is why enumeration targets the authoritative server directly. A resolver can tell you what a name resolves to, but only the authoritative server can tell you what else exists in the zone, and only if it is misconfigured to answer that question.
+
+## The record types, and what each one reveals
+
+A DNS zone is a collection of resource records, and each record type is a different kind of fact about the domain. An enumerator reads them the way a detective reads a file: each record is small on its own, but together they draw a picture of the organisation's infrastructure.
+
+**A records** map a name to an IPv4 address. `www.example.com` points to an address, and that address tells you where the web server lives, which network it sits on, and, by extension, which provider hosts it. Multiple A records for one name usually mean load balancing or redundancy, and each address is another host to note.
+
+**AAAA records** do the same for IPv6. They are easy to overlook, and that is exactly why they matter: an organisation that publishes an IPv6 address for a service may have an IPv6 path to that service that its firewall rules do not cover as carefully as the IPv4 path. An enumerator checks both.
+
+**MX records** name the mail servers for a domain, with a priority number that says which server to try first. Mail servers are interesting targets, because they run software that receives mail from the internet, and because their names often reveal the mail provider, the hosting setup, or an internal naming pattern. A domain with several MX records, or with an MX record pointing to an on-premises server, tells a different story from a domain whose mail is entirely outsourced.
+
+**NS records** name the authoritative name servers for the zone. They tell you who runs DNS for the domain, and they are the servers you would ask for a zone transfer. If the NS records point to servers inside the organisation, those servers are worth noting. If they point to a provider, that tells you about the outsourcing choice.
+
+**SOA records** mark the start of a zone of authority, and they hold the zone's metadata: the primary name server, the administrator's contact address, a serial number that increments with each change, and timers for refresh, retry, expiry, and minimum caching. The serial number is a small detail with real value: if it changes between two queries, the zone has been updated, and the change itself is a signal that something in the infrastructure moved.
+
+**CNAME records** are aliases: one name points to another name, and the lookup continues with the new name. CNAME records reveal relationships between services, such as a webmail name pointing to a provider's host, or a subdomain pointing to a cloud service. They also reveal naming patterns, because the target of a CNAME is often a more revealing name than the alias itself.
+
+**TXT records** hold free-form text, and they are the record type that most often leaks more than intended. TXT records carry verification strings for email authentication, such as SPF, DKIM, and DMARC policies, domain ownership proofs, and service verification tokens. An SPF record lists which servers are allowed to send mail for the domain, which is a list of mail infrastructure in itself. A DMARC record states the policy for mail that fails authentication. Reading TXT records is reading the organisation's email security posture in plain text.
+
+**SRV records** state where a service lives: a service name, a protocol, a priority, a weight, a port, and a target host. They are used for services such as SIP, XMPP, and LDAP, and they are explicit about ports and hosts in a way that other records are not. An SRV record does not just say a service exists, it says where to connect and on which port.
+
+**PTR records** are the reverse of A records: they map an address back to a name, and they live in a special reverse zone. Reverse lookups are how an enumerator turns a range of addresses into a list of names, and they are the technique for mapping a network from the address side rather than the name side.
+
+<Diagram title="Record types and what each one reveals" caption="Eight record types, each a different kind of fact. An enumerator reads them together, because the picture comes from the combination, not from any single record.">
+<svg viewBox="0 0 720 400" width="100%" role="img" aria-labelledby="exploring-dns-enumeration-d2-title exploring-dns-enumeration-d2-desc">
+<title id="exploring-dns-enumeration-d2-title">DNS record types tree diagram</title>
+<desc id="exploring-dns-enumeration-d2-desc">A tree diagram with a DNS zone at the top and eight record types below, each labelled with what it reveals to an enumerator.</desc>
+<rect x="260" y="24" width="200" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="48" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">DNS zone: example.com</text>
+<text x="360" y="66" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">a set of resource records</text>
+<line x1="360" y1="76" x2="360" y2="100" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="96" y1="100" x2="624" y2="100" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="96" y1="100" x2="96" y2="124" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="216" y1="100" x2="216" y2="124" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="336" y1="100" x2="336" y2="124" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="456" y1="100" x2="456" y2="124" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="576" y1="100" x2="576" y2="124" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="624" y1="100" x2="624" y2="124" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<rect x="36" y="124" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="96" y="150" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">A / AAAA</text>
+<text x="96" y="170" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">host addresses</text>
+<rect x="156" y="124" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="216" y="150" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">MX</text>
+<text x="216" y="170" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">mail servers</text>
+<rect x="276" y="124" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="336" y="150" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">NS</text>
+<text x="336" y="170" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">name servers</text>
+<rect x="396" y="124" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="456" y="150" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">SOA</text>
+<text x="456" y="170" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">zone authority</text>
+<rect x="516" y="124" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="576" y="150" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">CNAME</text>
+<text x="576" y="170" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">aliases</text>
+<line x1="96" y1="188" x2="96" y2="212" stroke="var(--text-secondary)" strokeWidth="1" />
+<line x1="216" y1="188" x2="216" y2="212" stroke="var(--text-secondary)" strokeWidth="1" />
+<line x1="456" y1="188" x2="456" y2="212" stroke="var(--text-secondary)" strokeWidth="1" />
+<rect x="36" y="212" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="96" y="238" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">TXT</text>
+<text x="96" y="258" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">SPF, DMARC</text>
+<rect x="156" y="212" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="216" y="238" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">SRV</text>
+<text x="216" y="258" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">service, port</text>
+<rect x="396" y="212" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="456" y="238" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">PTR</text>
+<text x="456" y="258" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">reverse lookup</text>
+<text x="360" y="320" textAnchor="middle" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">One record is a fact. All of them together are a map.</text>
+<text x="360" y="344" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Read the set, not the single record.</text>
+</svg>
+</Diagram>
+
+The tree in the diagram has eight leaves, and the plan asked for eight record types, but the zone itself is the ninth node, which keeps the diagram inside the nine-node budget. The point of the diagram is the same as the point of the section: the records are a set, and the value is in reading them together.
+
+## The basic queries: dig and nslookup
+
+The standard tool for DNS enumeration on Linux is `dig`, the domain information groper, which ships with the BIND tools. It sends a query and prints the answer in full, including the question, the answer section, and the authority section. The basic form is simple:
+
+```bash
+dig example.com A
+dig example.com MX
+dig example.com TXT
+dig example.com NS
+```
+
+Each command asks for one record type. The output is illustrative:
+
+```text
+Illustrative output:
+;; ANSWER SECTION:
+example.com.  3600  IN  A  93.184.216.34
+```
+
+That address, 93.184.216.34, is the documented address for `example.com` in the RFC examples, and it appears in the DNS documentation as the example address. It is not a real target, and it is used here because it is the standard example, not because it reveals anything about a real system.
+
+A more compact way to ask for everything at once is the `ANY` query, which asks for all record types at one name. In practice, many servers now answer `ANY` queries minimally, returning only a small subset, because a full `ANY` answer can be abused for amplification. RFC 8482 documents that minimal response behaviour, and it is a good example of a defensive change that directly reduces the value of a single enumeration query. If you need the full picture, you ask for each type separately, which is slower but more reliable.
+
+On Windows, the equivalent tool is `nslookup`, which is interactive and simpler, but less detailed than `dig`. For serious enumeration, `dig` is the tool to learn, because its output shows you exactly what the server returned, including the TTL, the class, and the authority section, which is where the next lead often hides.
+
+## Zone transfers: the whole map at once
+
+A zone transfer is the mechanism DNS uses to replicate a zone from a primary server to a secondary server. The secondary asks the primary for a full copy, using the AXFR query type, and the primary sends every record in the zone, framed by the SOA record at the start and at the end. An incremental transfer, IXFR, asks only for the changes since a given serial number. Both run over TCP port 53, because a full zone is too large for a single UDP packet.
+
+AXFR is defined in RFC 1035 and clarified by RFC 5936, and IXFR is defined in RFC 1995. The mechanism is legitimate and necessary: without it, secondary servers could not stay in sync with the primary. The vulnerability is not the mechanism, it is the access control around it. A primary server should only allow zone transfers from its known secondary servers, authenticated if possible. If it allows a transfer from anyone who asks, it hands over the entire zone to an enumerator in a single query.
+
+That is why a zone transfer attempt is one of the first things an enumerator tries. The command is short:
+
+```bash
+dig axfr example.com @ns1.example.com
+```
+
+If the server is configured correctly, the answer is a refusal, usually a message that the transfer failed or was not authorised. If it is misconfigured, the answer is the zone: every name, every address, every mail server, every TXT record, in one response. The enumerator does not need to guess subdomains, because the zone lists them all. That completeness is what makes an open zone transfer so valuable, and so dangerous to leave open.
+
+<Callout type="SECURITY FINDING">
+An open zone transfer is a configuration flaw, not a protocol flaw. The protocol needs transfers to work between primary and secondary servers. The flaw is allowing a transfer to a host that is not a secondary server. The fix is an allow list of transfer partners, and it belongs on the primary server.
+</Callout>
+
+The defender's side of a zone transfer is easy to see in the logs. An AXFR query is distinctive: it is a TCP query on port 53, for the AXFR type, from a host that is not a known secondary. A single AXFR attempt from an unknown host is a signal worth investigating. Repeated AXFR attempts from different hosts, or an AXFR followed by a burst of queries for the names it revealed, is a clearer signal that enumeration is under way.
+
+## Reverse lookups: mapping from the address side
+
+Reverse DNS turns the enumeration around. Instead of asking "what address does this name have", you ask "what name does this address have". PTR records live in a special reverse zone, under `in-addr.arpa` for IPv4, and a reverse lookup is a query for the PTR record of an address written in reverse.
+
+The command is:
+
+```bash
+dig -x 93.184.216.34
+```
+
+Illustrative output:
+
+```text
+Illustrative output:
+;; ANSWER SECTION:
+34.216.184.93.in-addr.arpa. 3600 IN PTR example.com.
+```
+
+Reverse lookups are useful when you already know an address range and want to know what lives in it. An enumerator who has found one address, for example from an A record, can sweep the neighbouring addresses with reverse queries and build a list of names in that range. Each PTR answer is a name that might not appear in a forward query, because it was never published as an A record for a public name, but it was published as a reverse record for the address.
+
+## Brute forcing subdomains
+
+When a zone transfer is not available, the enumerator guesses. Subdomain brute forcing is the systematic version of guessing: take a list of common subdomain names, such as `www`, `mail`, `vpn`, `admin`, `dev`, `staging`, and `api`, and query each one as a subdomain of the target domain. The names that resolve are real, and the names that do not are not.
+
+The tooling for this is straightforward. A wordlist of common subdomain names, a DNS resolver, and a loop that queries each name and records the ones that answer. Tools such as `dnsrecon`, `sublist3r`, and `amass` automate this, and they add extra sources, such as certificate transparency logs, which list every name a certificate was issued for, and search engine results, which may have indexed a subdomain the enumerator would not have guessed.
+
+Brute forcing works because subdomain naming is predictable. Organisations name things the way people name things: by function, by environment, by team. A `dev` subdomain sits next to a `staging` subdomain, a `vpn` gateway sits next to a `mail` server, and a new project gets a name that follows the same pattern as the last one. The wordlist is a bet on that predictability, and it pays off often enough to be worth running.
+
+The technique has limits. A wildcard DNS record, which answers for any subdomain, makes brute forcing useless, because every guess resolves, and the enumerator cannot tell a real name from a wildcard answer. A defender can also detect brute forcing easily: it is a burst of queries for many subdomains of one domain, from one source, in a short time. That burst is visible in the resolver logs, and it is distinct from normal traffic, where a client asks for one or two names it actually needs.
+
+<Callout type="NOTE">
+Brute forcing is noisy by nature. It trades stealth for coverage, and it is the loudest of the enumeration techniques in this article. If you run it against a system you own, watch the logs while it runs, and you will see exactly what the defender sees.
+</Callout>
+
+## Other sources: certificates, search, and the quiet leaks
+
+DNS is not the only source of names, and a thorough enumerator checks the others too. Certificate transparency logs are public records of every certificate issued by a public certificate authority, and each certificate lists the names it covers. Searching those logs for a domain returns subdomains that may never have appeared in DNS queries, because the certificate was issued before the subdomain was published, or because the subdomain is internal and only appears on a certificate.
+
+## What the defender sees
+
+Enumeration is not invisible. Every technique in this article leaves a trace in a log, and the defender's job is to recognise the pattern. Here is what each technique looks like from the other side.
+
+**Record queries** are normal in isolation. A single query for an MX record, or a TXT record, is ordinary traffic. The signal is volume and breadth: one source asking for every record type, for many names, in a short time, is enumeration, even if each individual query looks normal.
+
+**Zone transfer attempts** are the clearest signal. An AXFR query from a host that is not a secondary server is not normal traffic at all, because normal clients never ask for a zone transfer. Log it, alert on it, and treat a single attempt as worth investigating.
+
+**Reverse sweeps** are a pattern of PTR queries across consecutive addresses. Normal reverse lookups are scattered and tied to actual connections. A sweep is sequential and fast, and it stands out in the logs.
+
+<Callout type="MITIGATION">
+The most effective single fix in this article is also the simplest: restrict zone transfers to your known secondary servers, and test that the restriction works by attempting a transfer from an outside host. If the transfer fails, the whole zone stays private. If it succeeds, you have just handed an enumerator the map.
+</Callout>
+
+## A practical enumeration workflow
+
+If you are learning enumeration in a lab you own, here is a workflow that follows the order of this article, from quiet to loud. Work through it against `example.com` in a lab, or against a domain you own, and watch the logs at each step so you learn both sides at once.
+
+1. **Start with the records.** Query the A, MX, TXT, NS, and SOA records for the domain, and write down what each one tells you. Note the mail servers, the name servers, and anything in the TXT records that reveals a provider or a policy.
+2. **Try the zone transfer.** Attempt an AXFR against each name server. If it fails, that is the expected and correct result, and it tells you the zone is properly restricted. If it succeeds in your lab, read the zone and see how complete the map is.
+3. **Do the reverse lookups.** Take the addresses you found, and query their PTR records. Then try the neighbouring addresses in the same range, and see which ones have names.
+4. **Brute force the subdomains.** Run a small wordlist of common subdomain names, and record which ones resolve. Compare the list to what the zone transfer gave you, if it gave you one, and see what the brute force found that the transfer did not, and vice versa.
+5. **Check the other sources.** Look at the certificate transparency logs for the domain, and see which names appear there that did not appear in DNS. That comparison is a useful check on how complete your enumeration is.
+6. **Write it up.** For each name you found, note what it is, what it reveals, and what you would do next if this were a real assessment. The write-up is where enumeration becomes useful, because a list of names is not a finding until you explain what the names mean.
+
+## What to remember
+
+DNS enumeration works because DNS is public by design. The records have to be public for the internet to work, and the enumerator's job is to read them systematically and to notice what they add up to. The record types are the vocabulary: A and AAAA for addresses, MX for mail, NS for name servers, SOA for zone metadata, CNAME for aliases, TXT for policies and proofs, SRV for services, and PTR for reverse lookups. The techniques are the grammar: direct queries, zone transfers, reverse sweeps, and brute forcing, plus the public sources such as certificate logs that complement them.
+
+The defender's job is the mirror image: restrict what can be transferred, keep TXT records minimal, avoid unnecessary exposure, and watch the logs for the patterns that enumeration leaves behind. An AXFR from an unknown host, a burst of subdomain queries, a sweep of PTR records: each is a signal, and together they are a clear picture that someone is mapping your infrastructure.
+
+If you remember one sentence from this article, make it this one: DNS does not keep secrets, it answers questions, so the question is not whether someone can enumerate your domain, but what your answers reveal when they do.
+
+## References
+
+- RFC 1034, Domain Names, Concepts and Facilities, November 1987: https://www.rfc-editor.org/rfc/rfc1034.html
+- RFC 1035, Domain Names, Implementation and Specification, November 1987: https://www.rfc-editor.org/rfc/rfc1035.html
+- RFC 5936, DNS Zone Transfer Protocol (AXFR), June 2010, clarifying the AXFR mechanism in RFC 1035: https://www.rfc-editor.org/rfc/rfc5936.html
+- RFC 1995, Incremental Zone Transfer in DNS, August 1996: https://www.rfc-editor.org/rfc/rfc1995.html
+- RFC 8482, Providing Minimal-Sized Responses to DNS Queries That Have QTYPE=ANY, January 2019: https://www.rfc-editor.org/rfc/rfc8482.html
+- OWASP Web Security Testing Guide, information gathering and DNS enumeration material: https://owasp.org/www-project-web-security-testing-guide/

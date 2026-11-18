@@ -1,0 +1,255 @@
+---
+title: "Building a practical Linux security lab"
+slug: "building-a-practical-linux-security-lab"
+description: "A lab you can build this weekend: hardware and virtualization choices, attacker, victim, and firewall machines on an isolated network, and the safety rules that keep it sealed off."
+date: "2026-11-18"
+category: "Linux"
+tags: ["linux", "lab", "virtualization", "hardening"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+The fastest way to learn security is to break something you own, watch what happens, and fix it. Reading about a vulnerability gives you the shape of it. Exploiting it in a lab gives you the feel of it: the error message, the timing, the log line that gives it away, the moment the fix actually works. A home lab is where that learning happens, and it does not need to be expensive or complicated. A single laptop, a free hypervisor, and three virtual machines are enough to start.
+
+This article is a practical build guide. It covers the hardware you need, the virtualization choice, the network design that keeps the lab isolated, the three machines that make up a useful lab (attacker, victim, and firewall), and the safety rules that keep an intentionally vulnerable lab from becoming a problem for anyone else. Some parts describe my own habits, and those are marked clearly as my experience. The rest is general guidance: standard commands, standard tools, and choices you can verify against the vendor documentation linked at the end.
+
+## Why a lab, and why Linux
+
+A lab gives you permission to fail loudly. On a production system, a wrong command can take down a service or delete data. In a lab, a wrong command teaches you something, and a snapshot puts the machine back the way it was. That safety is what makes a lab worth building before you touch anything real.
+
+Linux is a good base for a security lab for three practical reasons. First, the tooling lives here: the scanners, the packet tools, the scripting languages, and the servers you will practise against are all native to Linux, and most of them are free. Second, Linux is transparent. When something goes wrong, you can read the logs, inspect the service, and see exactly what happened, instead of guessing behind a closed interface. Third, the skills transfer. The same commands you use to build a lab VM are the commands you use to administer a real server, read a firewall rule, or investigate a log.
+
+## What you need: hardware
+
+A lab is mostly a question of memory and disk. The processor matters less than people think, because lab VMs spend most of their time idle, waiting for you to type the next command.
+
+**Memory is the real budget.** Each virtual machine needs its own RAM, and the host needs RAM for itself. A practical minimum is 16 GB of RAM on the host. With 16 GB, you can run a host plus three small VMs comfortably: 2 GB for the attacker, 2 GB for the victim, 1 GB for the firewall, and the rest for the host. With 32 GB, you can run larger victims, add a second target, or keep a browser and notes open on the host without swapping. With 8 GB, you can still build a lab, but you will run one or two VMs at a time, and you will feel the limit quickly.
+
+**Disk space and speed matter more than capacity.** Virtual machine disks are large files, often 10 to 20 GB each, and snapshots add more. A 256 GB SSD is a workable minimum, and a 512 GB SSD is comfortable. An SSD is worth having over a spinning disk, because booting three VMs and taking snapshots on a slow disk is the kind of friction that quietly kills a lab habit. If your laptop has a small internal drive, an external SSD over USB works, but keep the VM files on the fastest drive you have.
+
+**A processor with virtualization support.** Almost every processor made in the last decade supports hardware virtualization, called VT-x on Intel and AMD-V on AMD. It is usually enabled by default, but on some machines it is switched off in the firmware settings. If your hypervisor warns that virtualization is not available, or if VMs run very slowly, check the firmware settings for a virtualization option and enable it. You will also want a 64-bit processor and a 64-bit host operating system, which is the default on any modern machine.
+
+<Callout type="TIP">
+Start with the hardware you already have. A lab built today on a laptop you own beats a perfect lab planned for a machine you will buy someday. If your machine has 16 GB of RAM and an SSD, you have enough.
+</Callout>
+
+## Choosing the virtualization stack
+
+Virtualization is the layer that lets one physical machine run several virtual ones. For a home lab, the practical choices are VirtualBox, VMware Workstation Player, and KVM with libvirt, plus containers with Docker for lighter workloads. Each has a place, and the right choice depends on your host.
+
+**VirtualBox** is free, open source, made by Oracle, and runs on Windows, macOS, and Linux. It is the simplest starting point: install it, create a VM, attach an installer image, and boot. Its networking options, including host-only and internal networks, are the ones this article uses, and its snapshot feature is straightforward. If you are on Windows or macOS and want the lowest friction, start here. The VirtualBox documentation describes the network modes in detail, and it is worth reading the networking section before you wire the lab together.
+
+**VMware Workstation Player** is free for personal use, runs on Windows and Linux, and is polished and fast. Its networking is similar to VirtualBox, with host-only and NAT options, and it handles larger VMs well. If you already use it, there is no reason to switch. The concepts in this article, isolated networks, snapshots, and the three-machine shape, apply exactly the same way.
+
+**KVM with libvirt** is the native Linux option, and it is what I reach for on a Linux host when I want the lab to feel like real infrastructure. KVM is built into the Linux kernel, and libvirt, with the `virt-manager` graphical tool, gives you a clean way to create and manage VMs. It is fast, it integrates well with Linux networking, and it teaches you the tooling that real Linux servers use. It has a steeper first setup than VirtualBox, because you install and configure more pieces yourself, but the result is a lab that behaves like a small data centre. If your host runs Linux and you are comfortable on the command line, KVM is a strong choice.
+
+**Docker** is not a virtual machine, and that distinction matters. A container shares the host kernel, so it is lighter and faster to start than a VM, and it is ideal for running a single application, such as a vulnerable web app, in an isolated process. I use Docker for exactly that: running PenTrix VulnLab, my deliberately vulnerable web lab, as a container bound to localhost only, so I can practise web attacks against a real app without giving it a whole VM. But a container is not a separate machine. It does not have its own kernel, its own firewall, or its own network stack in the same way a VM does. For learning network security, firewall rules, and full-system attacks, you still want VMs. Use Docker for apps, and VMs for machines.
+
+## The network design: isolation first
+
+The network is the most important decision in the whole lab, and it is the one to get right before you install anything. The rule is simple: the lab must have no path to the internet and no path to your home network, except through a route you control and understand.
+
+VirtualBox gives you four network modes, and the difference between them is the whole design. **NAT** gives a VM internet access through the host, but VMs on NAT cannot easily reach each other. **Bridged** puts a VM on your real home network as if it were a physical device, which is exactly what you do not want for a vulnerable target. **Host-only** creates a private network between the host and the VMs, with no route to the internet. **Internal** creates a private network between VMs only, with the host excluded as well.
+
+For a security lab, host-only is the usual starting point. It lets the host talk to the VMs, which is handy for copying files or opening a lab web app in the host browser, while giving the lab no path to the internet. Internal is the stricter option: VMs can talk to each other, and nothing outside the VMs can reach them at all. If you want maximum isolation, use internal. The practical difference is whether you need the host to reach the lab directly, and for most learning, host-only is the right balance.
+
+A clean address plan makes the lab easy to reason about. Use a private range that does not collide with your home network. The 192.168.56.0/24 range is the conventional VirtualBox host-only range, and it is a good default. Give the host the .1 address, and assign static addresses to the VMs so you always know where things are:
+
+| Machine | Address | Role |
+|---|---|---|
+| Host | 192.168.56.1 | Your machine, lab gateway |
+| Attacker | 192.168.56.10 | The machine you attack from |
+| Victim | 192.168.56.20 | The machine you attack |
+| Firewall | 192.168.56.1 (second leg) | The router between lab and outside |
+
+That table is a plan, not a result. Your addresses will match it only if you configure them that way, and the commands below show how. Static addresses matter because a lab where the victim's address changes on every boot is a lab where you waste time rediscovering it. Turn off the host-only DHCP server, or set reservations, and give each VM a fixed address.
+
+<Diagram title="Lab deployment: host, hypervisor, and three VMs" caption="Three VMs sit on an isolated host-only network. The firewall VM is the only machine with a second leg toward the outside, and that leg stays off unless you deliberately need updates.">
+<svg viewBox="0 0 720 420" width="100%" role="img" aria-labelledby="building-a-practical-linux-security-lab-d1-title building-a-practical-linux-security-lab-d1-desc">
+<title id="building-a-practical-linux-security-lab-d1-title">Linux security lab deployment diagram</title>
+<desc id="building-a-practical-linux-security-lab-d1-desc">A deployment diagram showing a host machine with a hypervisor running attacker, victim, and firewall virtual machines on an isolated host-only network, with the internet outside the boundary.</desc>
+<rect x="24" y="24" width="672" height="336" rx="8" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="48" y="52" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Host machine</text>
+<text x="48" y="70" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">your laptop or desktop</text>
+<rect x="48" y="88" width="624" height="248" rx="6" fill="var(--background)" stroke="var(--border)" strokeWidth="1" />
+<text x="72" y="112" fontSize="12" fontWeight="600" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Hypervisor</text>
+<text x="72" y="130" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">VirtualBox, VMware, or KVM</text>
+<rect x="72" y="152" width="176" height="96" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="160" y="180" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Attacker VM</text>
+<text x="160" y="200" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">192.168.56.10</text>
+<text x="160" y="218" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">scanning tools</text>
+<rect x="272" y="152" width="176" height="96" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="180" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Victim VM</text>
+<text x="360" y="200" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">192.168.56.20</text>
+<text x="360" y="218" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">practice target</text>
+<rect x="472" y="152" width="176" height="96" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="560" y="180" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Firewall VM</text>
+<text x="560" y="200" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">192.168.56.1 leg</text>
+<text x="560" y="218" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">router and filter</text>
+<line x1="248" y1="200" x2="272" y2="200" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="448" y1="200" x2="472" y2="200" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="560" y1="248" x2="560" y2="300" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="5,4" />
+<rect x="480" y="288" width="160" height="20" fill="var(--background)" />
+<text x="560" y="302" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">second leg, normally off</text>
+<text x="48" y="380" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Isolated host-only network: 192.168.56.0/24</text>
+<text x="48" y="400" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">no route to the internet from this segment</text>
+<rect x="24" y="372" width="672" height="0" fill="none" stroke="none" />
+<text x="696" y="384" textAnchor="end" fontSize="11" fill="var(--warning)" fontFamily="var(--font-mono), monospace">INTERNET OUTSIDE THIS BOX</text>
+</svg>
+</Diagram>
+
+The diagram shows the shape to aim for. The three VMs share one isolated segment. The firewall VM is the only one with a second network leg, and that leg is normally off. When you need to update the attacker VM, you turn the outside leg on, update, and turn it off again. The victim never gets an outside leg at all.
+
+## The three machines
+
+A lab with one attacker and one victim is already useful, but adding a firewall as a third machine turns it into a place where you can learn networking as well as exploitation. Here is how to think about each machine.
+
+### The attacker VM
+
+The attacker is the machine you work from. It holds your tools, your notes, and your scripts, and it is the only machine you need to log into during most sessions. A common choice is Kali Linux, which ships with the standard security tooling preinstalled: the network scanner nmap, the packet tool Wireshark, the proxy Burp Suite, and the usual command line tools. Kali is a Debian-based distribution, and it is designed for this role. If you prefer to build your own attacker, a plain Debian or Ubuntu VM with the tools you need installed on top works just as well, and it teaches you more about what each tool does, because you chose to install it.
+
+### The victim VM
+
+The victim is the machine you practise against. It should be deliberately vulnerable, or at least deliberately misconfigured, because a hardened victim teaches you nothing except that the attack failed. The classic choices are purpose-built vulnerable VMs, such as Metasploitable, which ships with a set of known vulnerable services, or a plain Linux server that you configure yourself with a vulnerable web app, an open service, or a weak configuration.
+
+If you build the victim yourself, start small. Install a minimal Debian or Ubuntu server, add a web server with a simple site, and leave one service in a state you can practise against. Then, as you learn, add a second service, a second user, or a second flaw, and document what you changed. The discipline of building the victim yourself is part of the learning: you understand the flaw because you created it.
+
+My own shortcut for the victim role is PenTrix VulnLab, the deliberately vulnerable web lab I built. I run it in Docker on the host or in a VM, bound to localhost or to the isolated lab network only, and I practise web attacks against its challenges. The lab's flags are randomly generated per install at first boot, no flag literal exists in any tracked file, and only genuine exploits earn flags, so the practice is honest: a flag means the exploit actually worked. That is a useful property in a victim, and it is worth looking for in any vulnerable app you choose.
+
+### The firewall VM
+
+The firewall is the machine that teaches you networking. It has two network interfaces: one on the isolated lab network, and one facing outward, normally disabled. Its job is to route and filter traffic between the lab and the outside world, and to give you a place to practise firewall rules, packet filtering, and logging.
+
+A minimal Debian install with nftables or iptables is enough. You do not need a heavy firewall distribution to learn the concepts, although distributions such as pfSense or OPNsense are excellent if you want a graphical firewall to study. The value of the firewall VM is not the software, it is the position: it sits between the lab and everything else, and it sees every packet that tries to leave. When you write a rule that blocks the victim from reaching the internet, and then watch the packet counter stay at zero while the attacker can still reach the victim, you have learned something that no diagram can teach as well.
+
+## Building it, in order
+
+The build order matters, because each step depends on the one before it. Work through it in this order, and do not skip the snapshot steps.
+
+<Diagram title="Build order: install to first snapshot" caption="Each step depends on the one before it. The snapshots are the safety net that makes the rest of the lab usable.">
+<svg viewBox="0 0 720 260" width="100%" role="img" aria-labelledby="building-a-practical-linux-security-lab-d2-title building-a-practical-linux-security-lab-d2-desc">
+<title id="building-a-practical-linux-security-lab-d2-title">Linux lab build order process</title>
+<desc id="building-a-practical-linux-security-lab-d2-desc">A five step process diagram from installing the hypervisor to taking the first snapshot and running the first test.</desc>
+<rect x="24" y="60" width="112" height="96" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="80" y="92" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">1. Install</text>
+<text x="80" y="112" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">hypervisor</text>
+<text x="80" y="128" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">on host</text>
+<rect x="160" y="60" width="112" height="96" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="216" y="92" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">2. Network</text>
+<text x="216" y="112" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">host-only</text>
+<text x="216" y="128" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">192.168.56.0/24</text>
+<rect x="296" y="60" width="112" height="96" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="352" y="92" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">3. Build VMs</text>
+<text x="352" y="112" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">attacker</text>
+<text x="352" y="128" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">victim, firewall</text>
+<rect x="432" y="60" width="112" height="96" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="488" y="92" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">4. Snapshot</text>
+<text x="488" y="112" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">clean state</text>
+<text x="488" y="128" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">every VM</text>
+<rect x="568" y="60" width="128" height="96" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="632" y="92" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">5. First test</text>
+<text x="632" y="112" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">ping and scan</text>
+<text x="632" y="128" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">inside lab only</text>
+<line x1="136" y1="108" x2="160" y2="108" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="272" y1="108" x2="296" y2="108" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="408" y1="108" x2="432" y2="108" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="544" y1="108" x2="568" y2="108" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<text x="360" y="200" textAnchor="middle" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">If a step breaks, restore the snapshot and try again.</text>
+<text x="360" y="224" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">That is the whole point of the snapshot step.</text>
+</svg>
+</Diagram>
+
+**Step 1: Install the hypervisor.** Install VirtualBox, VMware Workstation Player, or KVM on your host, and confirm that hardware virtualization is enabled. Create a folder for the lab, somewhere with enough disk space, and keep all VM files in it, so the lab is portable and easy to back up.
+
+**Step 2: Create the isolated network.** In VirtualBox, open the network manager and create a host-only network on 192.168.56.0/24, with the host address 192.168.56.1. Turn off its DHCP server, because you will assign static addresses. In VMware, the equivalent is a host-only network. In KVM with libvirt, create an isolated virtual network with no forwarding. The name of the setting differs, but the idea is the same: a network with no route out.
+
+**Step 3: Build the three VMs.** Create the attacker, the victim, and the firewall, each attached to the isolated network only, except for the firewall's second leg, which stays disabled. Install the operating system on each, set a static address, and confirm that each VM can ping the others and cannot ping the internet. The ping test is the first real check of the design: if the victim can ping an internet address, the isolation is broken, and you fix the network before you go further.
+
+**Step 4: Snapshot everything.** Take a snapshot of each VM in its clean state, and name it clearly, for example "clean install, 2026-11-18". Snapshots are the lab's undo button. My habit is to snapshot before any experiment that might break a machine, and to snapshot the victim after every deliberate change to its vulnerable state, so I can return to a known configuration. A lab without snapshots is a lab where one mistake costs an afternoon of rebuilding.
+
+**Step 5: Run the first test.** From the attacker, ping the victim, then run a basic scan against it. The commands below are standard, and their output is illustrative.
+
+```bash
+ping -c 3 192.168.56.20
+nmap -sV 192.168.56.20
+```
+
+Illustrative output:
+
+```text
+PING 192.168.56.20: 3 packets transmitted, 3 received, 0% packet loss
+Nmap scan report for 192.168.56.20
+Host is up.
+```
+
+If the ping works and the scan shows the services you expect on the victim, the lab is alive. If it does not, the problem is almost always the network: check that each VM is attached to the same host-only network, that the addresses are in the same range, and that no firewall on the host is blocking the virtual network.
+
+## Configuring the addresses
+
+Static addresses are set inside each guest. On a modern Linux VM using systemd, the address is usually configured through the network manager or through a netplan or systemd-networkd file, depending on the distribution. The exact file differs by distribution, but the values are the same: an address, a netmask, and no gateway, because the lab has no gateway to the internet.
+
+A quick check inside any VM confirms the configuration:
+
+```bash
+ip addr show
+ip route show
+```
+
+Illustrative output:
+
+```text
+2: eth0: inet 192.168.56.10/24 scope global eth0
+```
+
+The `ip route show` output should show a route for 192.168.56.0/24 and no default route, or a default route only through the firewall VM if you have configured one deliberately. If you see a default route to your home router, the VM has a second adapter attached to the wrong network, and you should remove it.
+
+## Safety rules that are not optional
+
+A lab with intentionally vulnerable machines is a responsibility, not just a playground. These rules are the ones I treat as non-negotiable, and they are the first thing to get right.
+
+**Never bridge a vulnerable VM to your home network or the internet.** Bridged networking makes the victim a device on your real network, visible to other devices and potentially to the internet. A vulnerable VM on a bridged network is a target for anyone who scans that network, and it can be used as a stepping stone. Host-only or internal only, always.
+
+**Never test anything outside the lab.** The tools in the attacker VM are powerful, and the habit of scanning must stay inside the isolated network. Do not scan your home router, your neighbour's network, a public website, or any system you do not own and have no permission to test. The lab exists so you do not need to, and the boundary is the point.
+
+**Keep the victim off the internet, always.** The victim's job is to be vulnerable. It should never receive updates directly from the internet, never browse the web, and never have a route out. If you need to install something on the victim, download it on the host, copy it into the lab through the host-only network, and install it from there. The firewall VM's outside leg is for the attacker only, and only when you deliberately enable it for updates.
+
+**Snapshot before you break things, and label the snapshots.** A snapshot named "before firewall test" is useful. A snapshot named "Snapshot 1" is not. The label is the difference between restoring in ten seconds and spending ten minutes figuring out which snapshot is the clean one.
+
+**Treat lab credentials as lab credentials.** Use passwords in the lab that you do not use anywhere else, and never reuse a real password in a lab. The lab is a place where credentials are deliberately weak, and where traffic is captured and studied. Keep real credentials out of it entirely. In this article, no real password appears, and any placeholder is marked as a placeholder.
+
+**Back up the lab folder.** VM files are large, but they are also your work. Copy the lab folder to an external drive from time to time, especially after you build a victim configuration you like. A disk failure that wipes the lab is a lesson in backups that you only need to learn once.
+
+<Callout type="WARNING">
+If you ever find that a lab VM can reach the internet, or that your home network can reach a lab VM, stop and fix the network before you run any test. Isolation is not a preference. It is the safety rule that makes the rest of the lab possible.
+</Callout>
+
+## Hardening the lab itself
+
+A security lab is a good place to practise hardening, because the lab machines are yours to configure and break. Start with the basics, and treat each one as a small exercise.
+
+On every VM, keep the system updated, except for the deliberate vulnerabilities on the victim. That sounds contradictory, but it is not: you update the base system and the tools, and you leave the one service you are practising against in its vulnerable state, deliberately and documented. The rest of the machine should be patched, because an unpatched base system teaches you nothing except that unpatched systems get compromised, which you already know.
+
+## A first week of exercises
+
+A lab is only useful if you use it, so here is a first week that builds on itself. Each exercise takes an evening, and each one uses the lab you just built.
+
+**Day 1: the network.** Ping every machine from every other machine. Draw the network from memory, then compare it to the diagram in this article. Run `ip addr` and `ip route` on each VM and write down what you see. If anything does not match the plan, fix it now.
+
+**Day 2: the scan.** From the attacker, scan the victim with nmap, and write down every open port and service. Then, on the victim, run `ss -tlnp` to see which services are listening, and compare the two lists. The difference between what the victim thinks it is running and what the attacker can see is the start of real network understanding.
+
+**Day 3: the firewall.** On the firewall VM, write a rule that blocks the victim from reaching the internet, and test it. Then write a rule that allows the attacker to reach the victim on one port and blocks it on another, and test that too. Log the blocked packets, and read the log.
+
+## What to remember
+
+A practical Linux security lab is three machines on an isolated network, a snapshot habit, and a set of safety rules you do not break. The hardware you already have is enough. The hypervisor choice matters less than the network design. The firewall VM is what turns a pair of machines into a place where you learn networking as well as exploitation. And the isolation rule is not optional: the lab stays sealed off, the victim never reaches the internet, and testing stays inside the lab.
+
+Build it this weekend. Take the snapshots. Then break something, restore it, and break it again. That loop is the lab doing its job.
+
+## References
+
+- Oracle VirtualBox User Manual, Networking chapter (host-only, internal, NAT, and bridged modes): https://www.virtualbox.org/manual/
+- VirtualBox VBoxManage networking reference, as documented in the VirtualBox User Manual: https://www.virtualbox.org/manual/
+- Kali Linux documentation, installing and using Kali as an attacker platform: https://www.kali.org/docs/
+- OWASP, guidance on building a secure lab environment for web application testing, Web Security Testing Guide: https://owasp.org/www-project-web-security-testing-guide/
+- PenTrix VulnLab repository, the deliberately vulnerable web lab mentioned in this article: https://github.com/mizazhaider-ceh/PenTrix-VulnLab
