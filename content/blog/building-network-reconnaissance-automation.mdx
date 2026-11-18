@@ -1,0 +1,329 @@
+---
+title: "Building network reconnaissance automation"
+slug: "building-network-reconnaissance-automation"
+description: "Turning manual recon into a repeatable pipeline, from discovery to port scan to service enumeration to a report a human can act on, with the ethics and scope rules built in."
+date: "2026-11-18"
+category: "Network Security"
+tags: ["network", "reconnaissance", "automation", "nmap", "scripting"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+Reconnaissance is the part of a security assessment that looks boring from the outside and decides everything on the inside. Before anyone tests a login page, reads a configuration, or thinks about an exploit, someone has to answer simple questions: what is on this network, what is listening, and what software is answering? Done by hand, that work is slow, easy to get wrong, and hard to repeat. Done as a pipeline, it becomes a habit: the same stages, in the same order, with the same outputs, every time, so the results can be compared and checked.
+
+This article builds that pipeline. It starts with the rules that make the work legitimate, then walks through each stage, discovery, port scanning, service enumeration, and reporting, using Nmap as the main tool, and finishes with the scripting that ties the stages together. Every example target in this article is `127.0.0.1`, an RFC 1918 private address, or `scanme.nmap.org`, the host the Nmap project itself provides for light testing. Nothing here is a guide to scanning someone else's network.
+
+## Why automate recon at all
+
+A manual scan is a one-off event. You run a command, read the output, and move on. A week later, when something changes, you have nothing to compare against. You cannot say whether a port is new, whether a service version changed, or whether a firewall rule stopped working, because the first scan exists only in your memory.
+
+A pipeline fixes that by making three promises. First, **repeatability**: the same commands run in the same order with the same options, so two runs are comparable. Second, **evidence**: every stage writes its output to a file, with a timestamp, so the work can be reviewed later. Third, **restraint**: the pipeline only touches what the scope file says it may touch, so a typo cannot turn a small scan into a large one.
+
+<Callout type="NOTE">
+A pipeline is not a shortcut past permission. It is a way to make permitted work careful and repeatable. If you do not have written permission to scan a target, no amount of scripting makes it acceptable.
+</Callout>
+
+## Rule zero: scope before packets
+
+Every recon pipeline starts before a single packet leaves the machine, with a scope file. The scope file is a short text document that answers four questions in writing: which hosts are in scope, which are explicitly out of scope, what kinds of scans are allowed, and who authorised the work.
+
+The hosts in scope are listed exactly, as addresses or ranges, never as a vague description. A scope that says "the lab network" is not a scope. A scope that says `192.168.20.0/24` is. The out of scope list matters just as much, because it names the neighbours you must not touch: the shared router, the host that runs the lab infrastructure, anything that belongs to someone else.
+
+The allowed scan types are the second half of the scope. A plain port scan and version detection are ordinary. Aggressive OS detection, intrusive scripts, and UDP sweeps of every port are heavier, slower, and more likely to disturb a service, so they need their own line in the scope. If the scope does not name a scan type, the pipeline does not run it.
+
+The authorisation line names the person who approved the work and when. This is not bureaucracy for its own sake. It is the difference between a security assessment and an unauthorised probe, and it is the first thing anyone will ask about if a scan is ever questioned.
+
+My own rule, and the rule this pipeline enforces, is simple: the pipeline reads its targets from the scope file, and it refuses to run if the scope file is missing. A script that asks you to type a target on the command line is a script that will one day be run against the wrong address.
+
+<Callout type="ETHICAL CONSIDERATION">
+Scanning a network you do not own, and do not have explicit written permission to test, can break the law where you live and can disrupt services other people rely on. The examples in this article use only localhost, private lab addresses, and the Nmap project's own test host. Keep your own practice inside the same boundary.
+</Callout>
+
+## The pipeline at a glance
+
+The pipeline has five stages. Scope produces the target list. Discovery finds which hosts are up. The port scan finds which ports are open. Service enumeration finds what software is answering on those ports. Reporting turns the findings into something a human can act on, and feeds the next run.
+
+<Diagram title="The recon pipeline, five stages" caption="Each stage takes the previous stage's output as its input. The report at the end feeds the next run, so a re-scan after fixes compares against the same baseline.">
+<svg viewBox="0 0 720 208" width="100%" role="img" aria-labelledby="building-network-reconnaissance-automation-d1-title building-network-reconnaissance-automation-d1-desc">
+<title id="building-network-reconnaissance-automation-d1-title">Reconnaissance pipeline stages</title>
+<desc id="building-network-reconnaissance-automation-d1-desc">A five stage process diagram: scope, discovery, port scan, service enumeration, and reporting, with a dashed return arrow for re-scanning after fixes.</desc>
+<defs>
+<marker id="recon-d1-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+<rect x="12" y="36" width="116" height="60" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="70" y="60" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">1. Scope</text>
+<text x="70" y="80" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">targets file</text>
+<rect x="152" y="36" width="116" height="60" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="210" y="60" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">2. Discovery</text>
+<text x="210" y="80" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">hosts up</text>
+<rect x="292" y="36" width="116" height="60" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="350" y="60" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">3. Port scan</text>
+<text x="350" y="80" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">open ports</text>
+<rect x="432" y="36" width="116" height="60" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="490" y="60" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">4. Services</text>
+<text x="490" y="80" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">versions</text>
+<rect x="572" y="36" width="116" height="60" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="630" y="60" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">5. Report</text>
+<text x="630" y="80" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">findings</text>
+<line x1="130" y1="66" x2="150" y2="66" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#recon-d1-arrow)" />
+<line x1="270" y1="66" x2="290" y2="66" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#recon-d1-arrow)" />
+<line x1="410" y1="66" x2="430" y2="66" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#recon-d1-arrow)" />
+<line x1="550" y1="66" x2="570" y2="66" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#recon-d1-arrow)" />
+<rect x="102" y="108" width="76" height="18" fill="var(--background)" />
+<text x="140" y="121" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">in scope</text>
+<rect x="242" y="108" width="76" height="18" fill="var(--background)" />
+<text x="280" y="121" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">hosts up</text>
+<rect x="382" y="108" width="76" height="18" fill="var(--background)" />
+<text x="420" y="121" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">open ports</text>
+<rect x="522" y="108" width="76" height="18" fill="var(--background)" />
+<text x="560" y="121" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">versions</text>
+<path d="M 630 96 L 630 180 L 70 180 L 70 98" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="5,4" markerEnd="url(#recon-d1-arrow)" />
+<rect x="282" y="164" width="156" height="18" fill="var(--background)" />
+<text x="360" y="177" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">re-scan after fixes</text>
+</svg>
+</Diagram>
+
+Notice what the diagram does not show: there is no exploit stage, no credential stage, no "break in" box. Reconnaissance ends at the report. What happens after the report, patching, firewall changes, a follow-up assessment, is a separate decision, made by the people responsible for the systems, not by the scanner.
+
+## Stage 1: scope as a file, not a feeling
+
+The scope file is the pipeline's input, and it is deliberately boring. A plain text file, one target per line, with comments allowed. Here is an illustrative example for a home lab:
+
+```text
+# scope.txt, illustrative lab example
+# Only these hosts may be scanned.
+# Everything else is out of scope.
+192.168.20.0/24
+127.0.0.1
+```
+
+The pipeline reads this file and nothing else. It never accepts a target typed at a prompt, and it never scans a range it was not given. That constraint is the whole point: the script cannot scan what the scope file does not name.
+
+Two details matter here. First, the addresses are private. RFC 1918 reserves three blocks for private networks: `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`. These addresses have no meaning on the public internet, which is exactly why they are the right choice for a lab. A lab built on private addresses cannot accidentally reach a real system, because private addresses are not routed across the internet.
+
+Second, the scope file is versioned. It lives in the same folder as the pipeline, it is committed with the scripts, and changes to it are visible in the history. When the scope grows, the reason for the growth is visible too. That audit trail is part of the deliverable, not an extra.
+
+## Stage 2: discovery, which hosts are up
+
+Discovery answers the cheapest question first: which hosts in the scope are actually up? There is no point port scanning an address that has nothing behind it, and on a large range the discovery stage is what keeps the rest of the pipeline fast.
+
+Nmap's host discovery scan is the `-sn` option, often called a ping scan. It sends probes to each target and reports which ones respond, without scanning any ports:
+
+```bash
+nmap -sn 192.168.20.0/24 -oA discovery
+```
+
+The `-oA` option is worth learning early. It writes the results in three formats at once: normal text, XML, and grepable output, all sharing the base name you give it. The XML file is the one the pipeline parses later. The text file is the one a human reads. The grepable file is the one a quick shell one-liner can search. One flag, three uses, and the scan never needs to be run twice to get a different format.
+
+An illustrative output for a small lab looks like this:
+
+```text
+Illustrative output:
+Nmap scan report for 192.168.20.10
+Host is up (0.0012s latency).
+Nmap scan report for 192.168.20.11
+Host is up (0.0009s latency).
+Nmap done: 256 IP addresses (2 hosts up) scanned in 2.41 seconds
+```
+
+Two details in that output deserve attention. The latency is tiny, because these are local lab hosts. On a real network, discovery takes longer, and a host that is up can still be missed if a firewall blocks the discovery probes. A host that does not answer a ping is not necessarily down. It may simply be configured to stay quiet. The pipeline records that uncertainty instead of hiding it: a host that does not answer is listed as "no response", not as "does not exist".
+
+The discovery stage also produces the target list for the next stage. Only hosts that answered are passed to the port scan. That keeps the port scan short and keeps the report honest: every host in the report was confirmed alive first.
+
+<Callout type="TIP">
+Run discovery with the same timing every time. If you scan a range with aggressive timing one day and gentle timing the next, you cannot tell whether a missing host went down or was simply missed by a faster probe. Consistency is what makes two runs comparable.
+</Callout>
+
+## Stage 3: port scanning, what is listening
+
+With a list of live hosts, the pipeline moves to port scanning. A port scan asks each host, for each port in the chosen set, whether anything is listening. Nmap's default scan checks the 1,000 most common TCP ports, which is a sensible starting point for a first pass:
+
+```bash
+nmap -sS 192.168.20.10 -oA ports-top1000
+```
+
+The `-sS` option is the TCP SYN scan. It sends a SYN packet, the first step of the TCP handshake, and reads the reply. A SYN-ACK reply means the port is open. A RST reply means it is closed. No reply, after retries, means it is filtered, usually by a firewall. Because the scan never completes the handshake, it is fast and it leaves little trace in application logs, though it still appears in network logs. It needs elevated privileges, so it is normally run with `sudo`. Without those privileges, Nmap falls back to a connect scan, `-sT`, which completes the full handshake. The connect scan works everywhere, it is slower, and it is more visible in logs, but logically it answers the same question.
+
+Nmap reports each port in one of four states, and the distinction between them is the first thing a beginner should learn to read properly. The Nmap reference guide defines them plainly: `open` means an application is listening for connections on that port. `closed` means no application is listening, though one could open at any time. `filtered` means a firewall or filter is blocking the probe, so Nmap cannot tell whether the port is open or closed. `unfiltered` means the port responded to probes, but Nmap cannot determine whether it is open or closed. There are also combined states, such as `open|filtered`, for cases where the evidence does not settle the question.
+
+That vocabulary matters because each state calls for a different response. An open port you did not expect is a finding. A closed port is normal. A filtered port is a question mark, and the right move is to check the firewall rule, not to assume the port is safe. A report that writes "filtered" as if it meant "closed" is a report that hides uncertainty.
+
+An illustrative port scan result for a lab host:
+
+```text
+Illustrative output:
+PORT     STATE  SERVICE
+22/tcp   open   ssh
+80/tcp   open   http
+443/tcp  open   https
+3306/tcp filtered mysql
+```
+
+Three ports are open and one is filtered. The filtered database port is the interesting line. It might be a firewall doing its job, or it might be a service that is only reachable from some networks. The pipeline flags it for a human to check, rather than deciding on its own.
+
+The full port range is a separate, slower pass. The default 1,000 ports cover the common services, but a service can listen on any port up to 65535. A thorough pipeline runs the full range at least once per baseline, and then repeats the top 1,000 on later runs for speed:
+
+```bash
+nmap -sS -p- 192.168.20.10 -oA ports-all
+```
+
+The `-p-` option means all 65,535 TCP ports. It is slower, and it is noisier, so it belongs in the baseline run and in the re-scan after a change, not in every quick check. UDP scanning is a third pass, and it is slower still, because UDP has no handshake to answer quickly. The pipeline scans the top UDP ports only when the scope allows it:
+
+```bash
+nmap -sU --top-ports 50 \
+  192.168.20.10 -oA ports-udp
+```
+
+## Stage 4: service enumeration, what software is answering
+
+Knowing that port 80 is open is much less useful than knowing what is answering on port 80. Service enumeration turns a port number into a name and a version, and that is the stage where the report starts to become actionable. A version string is what lets you check whether a service is outdated, and whether it matches what the system owner expects to be running.
+
+The `-sV` option probes each open port to identify the service and its version:
+
+```bash
+nmap -sV -p 22,80,443 \
+  192.168.20.10 -oA services
+```
+
+An illustrative result:
+
+```text
+Illustrative output:
+PORT    STATE SERVICE VERSION
+22/tcp  open  ssh     OpenSSH 9.6p1
+80/tcp  open  http    Apache httpd 2.4.58
+443/tcp open  http    Apache httpd 2.4.58
+```
+
+The version numbers are the payload of this stage. They are what the report compares against the expected inventory. If the inventory says the web server should be one version and the scan finds another, that is a finding, and it is a finding that does not need any exploit to be useful.
+
+The `-sC` option runs the default set of Nmap Scripting Engine scripts alongside version detection. The NSE is Nmap's scripting system: small Lua scripts that gather extra information, such as an HTTP page title, SSH host keys, or TLS certificate details. The default set is designed to be safe and informative:
+
+```bash
+nmap -sV -sC -p 22,80,443 \
+  192.168.20.10 -oA services-scripts
+```
+
+The script categories are the part to be careful with. Nmap's scripts are grouped into categories, including `safe`, `default`, `discovery`, `version`, `vuln`, `intrusive`, `brute`, and `dos`. The pipeline uses `safe` and `default` only. The `intrusive`, `brute`, `dos`, and `exploit` categories run checks that can disturb or damage a service, and they belong in a scope only when they are named explicitly and the system owner has agreed to them. Running a broad vulnerability script set against a live system without that agreement is not thoroughness. It is carelessness with someone else's service.
+
+<Callout type="WARNING">
+Never run intrusive, brute force, or denial of service script categories against a system unless the written scope explicitly allows them. A heavy script can crash a fragile service, lock accounts, or fill logs, and the damage is done by your scan, not by an attacker.
+</Callout>
+
+OS detection, `-O`, is a useful extra when the scope allows it, because it tells you what operating system a host is running, which helps explain what you see. It needs elevated privileges and at least one open and one closed port to work well. The aggressive option, `-A`, bundles version detection, default scripts, OS detection, and traceroute into one flag. It is convenient, and it is also the flag most likely to exceed a narrow scope, so the pipeline avoids it and runs each piece explicitly instead. Explicit flags are easier to review, and easier to defend.
+
+## Stage 5: reporting, turning output into action
+
+A scan that ends in a terminal scrollback is a scan that will be forgotten. The reporting stage turns the pipeline's files into a short document a human can act on, and it does three things.
+
+First, it states the scope and the date, so the report is anchored: which hosts were scanned, with which options, and when. Second, it lists the findings in order of interest: unexpected open ports first, then unexpected versions, then filtered ports that need a check, then everything that matched expectations, in one line each. Third, it ends with the next steps: which ports to close, which services to update, which firewall rules to verify, and when the re-scan happens.
+
+The report is short on purpose. A twenty page report for a three host lab is a report nobody reads. The audience is the person who owns the systems, and they need to know what changed and what to do, not how Nmap works.
+
+The most useful part of the report is the comparison with the previous run. A port that is open today and was closed last week is a new finding, and it deserves a sentence of its own. A port that was open last week and is closed today is a fix confirmed. Without a baseline, every scan looks the same, and the report can only describe the present. With a baseline, the report describes change, and change is what the system owner actually needs to see.
+
+That comparison is why the pipeline keeps every run's files. The XML output from `-oA` is machine readable, so a small script can diff two runs and list only what changed. The human writes the judgement. The machine writes the diff.
+
+## How the stages feed each other
+
+The data flow diagram below is the pipeline seen as data, not as steps. Each stage writes a file, and the next stage reads that file. Nothing is passed by memory, and nothing is re-typed by hand.
+
+<Diagram title="One stage's output is the next stage's input" caption="The scope file feeds discovery, discovery feeds the port scan, the port scan feeds service enumeration, and enumeration feeds the report. Each artifact is a file on disk, so any stage can be re-run on its own.">
+<svg viewBox="0 0 720 320" width="100%" role="img" aria-labelledby="building-network-reconnaissance-automation-d2-title building-network-reconnaissance-automation-d2-desc">
+<title id="building-network-reconnaissance-automation-d2-title">Recon data flow between stages</title>
+<desc id="building-network-reconnaissance-automation-d2-desc">A data flow diagram with four pipeline stages on the left and the file each one writes on the right, connected by arrows labelled with the file names.</desc>
+<defs>
+<marker id="recon-d2-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+<rect x="24" y="32" width="200" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="124" y="56" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Discovery</text>
+<text x="124" y="76" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">nmap -sn</text>
+<rect x="24" y="104" width="200" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="124" y="128" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Port scan</text>
+<text x="124" y="148" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">nmap -sS</text>
+<rect x="24" y="176" width="200" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="124" y="200" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Service enum</text>
+<text x="124" y="220" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">nmap -sV -sC</text>
+<rect x="24" y="248" width="200" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="124" y="272" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Report</text>
+<text x="124" y="292" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">diff vs baseline</text>
+<rect x="496" y="32" width="200" height="56" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="596" y="56" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Host list</text>
+<text x="596" y="76" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">discovery.xml</text>
+<rect x="496" y="104" width="200" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="596" y="128" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Port table</text>
+<text x="596" y="148" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">ports.xml</text>
+<rect x="496" y="176" width="200" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="596" y="200" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Service inventory</text>
+<text x="596" y="220" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">services.xml</text>
+<rect x="496" y="248" width="200" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="596" y="272" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Findings report</text>
+<text x="596" y="292" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">report.md</text>
+<line x1="226" y1="60" x2="494" y2="60" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#recon-d2-arrow)" />
+<rect x="302" y="44" width="116" height="18" fill="var(--background)" />
+<text x="360" y="57" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">writes hosts up</text>
+<line x1="226" y1="132" x2="494" y2="132" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#recon-d2-arrow)" />
+<rect x="302" y="116" width="116" height="18" fill="var(--background)" />
+<text x="360" y="129" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">writes open ports</text>
+<line x1="226" y1="204" x2="494" y2="204" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#recon-d2-arrow)" />
+<rect x="302" y="188" width="116" height="18" fill="var(--background)" />
+<text x="360" y="201" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">writes versions</text>
+<line x1="226" y1="276" x2="494" y2="276" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#recon-d2-arrow)" />
+<rect x="302" y="260" width="116" height="18" fill="var(--background)" />
+<text x="360" y="273" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">writes findings</text>
+</svg>
+</Diagram>
+
+This shape is not specific to network scanning. I use the same pattern in my APK security pipeline: one stage reads a file, does one job, and writes a file the next stage can read. The manifest parser reads the APK and writes a plain element tree. The rule checks read that tree and write findings. The report reads the findings and writes the summary. When a stage is a file in and a file out, each stage can be tested on its own, re-run on its own, and debugged on its own, and the whole pipeline stays understandable. A pipeline that passes data through memory and global state is a pipeline that breaks in ways you cannot reproduce.
+
+## Scripting the pipeline
+
+The wrapper script is deliberately small. It checks the scope file exists, creates a timestamped output folder, runs the four Nmap stages in order, and stops if any stage fails. Here is an illustrative sketch, written for a lab, not a finished production tool:
+
+```bash
+#!/bin/bash
+# recon.sh, illustrative pipeline wrapper for a private lab
+set -euo pipefail
+
+SCOPE="scope.txt"
+OUT="runs/$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$OUT"
+
+test -f "$SCOPE" || {
+  echo "scope file missing, refusing to run"
+  exit 1
+}
+
+nmap -sn -iL "$SCOPE" -oA "$OUT/discovery"
+grep "Status: Up" "$OUT/discovery.gnmap" |
+  cut -d" " -f2 > "$OUT/live.txt"
+nmap -sS -iL "$OUT/live.txt" \
+  -oA "$OUT/ports"
+```
+
+A few choices in that sketch are worth explaining. `set -euo pipefail` makes the script stop on the first error instead of carrying on with missing input. The output folder is named by timestamp, so runs never overwrite each other, and the baseline is always the previous folder. The scope file is read with `-iL`, which takes targets from a file, so the target list is never typed on a command line. And the port scan reads its targets from the discovery output, not from the scope file, so hosts that did not answer are never scanned.
+
+The sketch is incomplete on purpose: a real wrapper would add the service stage, the report stage, and a log of every command it ran. The point is the shape, not the finished script. Start with the shape, run it against localhost, and grow it one stage at a time.
+
+## Reading results without overreacting
+
+The most common beginner mistake in recon is treating every open port as a vulnerability. It is not. An open port is a fact about the network: something is listening there. Whether that is a problem depends on what is listening, who can reach it, and whether it should be reachable from where you scanned.
+
+Port 22 open on a lab host that you administer over SSH is expected. Port 22 open on a host that should only serve web pages is a finding. Port 3306 open to the whole lab network, when the database should only accept local connections, is a finding. The same port, the same state, three different judgements, and the difference is context the scanner cannot know. That is why the report goes to a human, and why the human is the one who decides what counts.
+
+A second mistake is the opposite one: treating a filtered port as a closed port. A filtered port is a port Nmap could not see clearly. It might be closed behind a firewall, or it might be open behind a firewall that drops probes. The report should keep filtered ports in a separate list, with a note to verify the firewall rule, rather than folding them into the closed list where they disappear.
+
+A third mistake is scanning once and never scanning again. Networks drift. Software is installed, services are started for a test and forgotten, firewall rules are edited in a hurry. A pipeline that runs on a schedule, weekly for a lab, after every change for a small network, catches that drift while it is still small. The re-scan is the part of the pipeline that pays for all the rest.
+
+## What to remember
+
+Reconnaissance automation is not about scanning faster. It is about scanning carefully, in a way that can be repeated, checked, and compared. Scope first, in a file. Discovery before port scanning. Port scanning before service enumeration. Service enumeration before reporting. Every stage writes a file, and the report ends with what changed and what to do next.
+
+If you build one thing from this article, build the scope file and the timestamped output folder. Those two habits, more than any Nmap flag, are what turn a scan into a pipeline, and a pipeline into evidence you can stand behind.
+
+## References
+
+- Nmap Reference Guide, Chapter 15 of Nmap Network Scanning, host discovery, port scanning techniques, service and version detection, Nmap Scripting Engine, and output formats: https://nmap.org/book/man.html
+- Nmap Project, the scanme.nmap.org test host and the official Nmap download and documentation site: https://nmap.org/
+- RFC 1918, Address Allocation for Private Internets, February 1996, the private address blocks 10.0.0.0/8, 172.16.0.0/12, and 192.168.0.0/16: https://www.rfc-editor.org/rfc/rfc1918.html

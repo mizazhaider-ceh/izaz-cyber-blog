@@ -1,0 +1,173 @@
+---
+title: "Documenting a CTF investigation, CSCB 2026"
+slug: "documenting-a-ctf-investigation-cscb-2026"
+description: "How I approach a CTF as an investigation: preparation, method, note-taking, time management, and what the results mean."
+date: "2026-11-18"
+category: "CTFs"
+tags: ["ctf", "cscb", "writeup", "competition"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+I treat a CTF the way I treat any investigation: as a set of questions, a method for answering them, and notes that keep the work honest. The competition gives you problems and a clock. The investigation is what you do with them. This article is about that investigation, how I prepare, how I work through a problem, how I take notes, how I manage time, and what my results at CSCB 2026 mean to me.
+
+The results, stated plainly and once, are these: at CSCB 2026 I placed #1 Web Junior, #3 overall Junior, and #26 of 806, earning 26 flags. Those are the facts. The rest of this article is method and reflection. It is not a walkthrough of any challenge, and it does not describe any specific problem, flag, or solution from the event. The method is the part worth writing down, because the method is what I can reuse.
+
+## What a CTF actually is
+
+A capture the flag competition gives you a set of problems, usually grouped by area, and each problem hides a flag, a short string you submit to earn credit. The problems are built to be solved by investigation: something is wrong, something is hidden, or something behaves in a way it should not, and your job is to find out what, and prove it by producing the flag.
+
+That shape is why I like CTFs. They reward the same skills as real security work: reading carefully, forming a theory, testing it, and writing down what you found. The difference is the clock and the scoring, which change the pressure but not the method. A rushed guess can earn a flag, but it teaches nothing. A careful investigation that fails still teaches the method, and the method is what carries over to the next problem, and to real work.
+
+The areas in a typical CTF will be familiar to anyone who reads this blog: web, reverse engineering, binary exploitation, cryptography, forensics, networking, and miscellaneous problems that do not fit anywhere else. My own preparation leans toward the areas I practise most, and the results at CSCB 2026 reflect that. The Web Junior first place tells me where my preparation paid off most clearly. The overall Junior third place tells me the breadth was there too, across more than one area. And 26 flags tells me the method held up across many problems, not just one lucky break.
+
+## Preparation: the work before the clock starts
+
+Most of a CTF is decided before it begins. The competition itself is execution. Preparation is everything that makes execution possible, and I prepare in three parts: tools, notes, and routine.
+
+**Tools.** I keep a small set of tools I know well, rather than a large set I half know. For me that means Python for quick scripts and parsing, Nmap for network questions, Ghidra for reading binaries, and the standard Linux command line tools for everything in between: `file`, `strings`, `grep`, and a text editor I can use without thinking. I practise with these tools on my own projects, so that during a competition I am thinking about the problem, not about the tool. A new tool learned the night before a competition is a tool that will waste your time when the clock is running.
+
+I also keep my environment ready. The tools are installed, the scripts I reuse are in one folder, and I know where everything lives. Setting up an environment during a competition is time spent not solving problems, and it is the easiest time to save, because it can all be done the day before.
+
+**Notes.** I keep a template note file for competitions, and I copy it fresh for each event. It has a section per problem, and each section has the same shape: what the problem gives me, what I have tried, what I have ruled out, and what I will try next. The template matters because under time pressure I will not invent a good structure. I will use whatever structure is already in front of me. A good template is preparation doing its job.
+
+**Routine.** I decide the basics before the event: when I will work, when I will take breaks, and what I will do when I get stuck. Those decisions sound small, and they are the ones that fall apart first under pressure. Deciding them in advance means I do not spend competition time deciding them badly.
+
+<Callout type="TIP">
+Prepare the way you want to compete. If your notes are messy in practice, they will be messy under pressure. If your tools are unfamiliar in practice, they will be unfamiliar when it counts. The competition does not make you better prepared. It reveals how prepared you already were.
+</Callout>
+
+## The investigation loop
+
+My method for a single problem is a loop with four steps: enumerate, hypothesize, test, and document. I repeat it until the problem is solved, or until I decide to stop and move on. The loop is simple on purpose. Simple survives pressure. Complicated methods do not.
+
+<Diagram title="The investigation loop" caption="Enumerate what the problem gives you, form a theory about where the flag is, test the theory, and write down what happened. Then repeat, with a better theory.">
+<svg viewBox="0 0 720 280" width="100%" role="img" aria-labelledby="documenting-a-ctf-investigation-cscb-2026-d1-title documenting-a-ctf-investigation-cscb-2026-d1-desc">
+<title id="documenting-a-ctf-investigation-cscb-2026-d1-title">CTF investigation loop</title>
+<desc id="documenting-a-ctf-investigation-cscb-2026-d1-desc">A four step cycle: enumerate, hypothesize, test, and document, with arrows running clockwise around the four boxes and a repeat label in the centre.</desc>
+<defs>
+<marker id="ctf-d1-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+<rect x="40" y="32" width="240" height="64" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="160" y="58" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Enumerate</text>
+<text x="160" y="78" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">what is given</text>
+<rect x="440" y="32" width="240" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="560" y="58" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Hypothesize</text>
+<text x="560" y="78" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">where the flag is</text>
+<rect x="440" y="192" width="240" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="560" y="218" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Test</text>
+<text x="560" y="238" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">try it, observe</text>
+<rect x="40" y="192" width="240" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="160" y="218" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Document</text>
+<text x="160" y="238" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">write it down</text>
+<line x1="282" y1="64" x2="438" y2="64" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#ctf-d1-arrow)" />
+<rect x="302" y="48" width="116" height="18" fill="var(--background)" />
+<text x="360" y="61" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">what is here</text>
+<line x1="560" y1="98" x2="560" y2="190" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#ctf-d1-arrow)" />
+<text x="576" y="148" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">try it</text>
+<line x1="438" y1="224" x2="282" y2="224" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#ctf-d1-arrow)" />
+<rect x="302" y="208" width="116" height="18" fill="var(--background)" />
+<text x="360" y="221" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">write it down</text>
+<line x1="160" y1="190" x2="160" y2="98" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#ctf-d1-arrow)" />
+<text x="148" y="148" textAnchor="end" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">next theory</text>
+<text x="360" y="152" textAnchor="middle" fontSize="12" fill="var(--text-muted)" fontFamily="var(--font-display), sans-serif">the loop repeats</text>
+</svg>
+</Diagram>
+
+**Enumerate.** The first step is to look at everything the problem gives you, and write it down, before forming any theory. What files are provided? What services are reachable? What does the problem statement actually say, word for word? Enumeration is deliberately boring. It is a list, not an idea. The reason it comes first is that most wrong theories come from skipping it: assuming a file exists that does not, or missing a detail the problem stated plainly.
+
+For a web problem, enumeration means reading the pages, looking at the requests the browser makes, and noting what the application offers. For a binary, it means the triage I describe in my reverse engineering article: format, strings, and the first hints about behaviour. For a file, it means looking at its type, its size, and its structure before assuming what is inside. The shape changes. The discipline does not: list first, theorise second.
+
+**Hypothesize.** Once I have the list, I form a theory: a short sentence about where the flag is and why. "The flag is in a file the application lets me read through this parameter." "The check compares my input against a value stored in the binary." A good theory is specific enough to be wrong. A vague theory, like "something is wrong with the login", cannot be tested, because any result fits it. A specific theory can fail, and a failed theory is useful, because it rules something out.
+
+I usually write two or three theories before testing any of them, and I order them by two things: how likely they seem, and how cheap they are to test. A likely theory that takes thirty seconds to test goes first. An unlikely theory that takes an hour goes last, if it goes at all.
+
+**Test.** Testing means doing the smallest thing that would prove or disprove the theory, and observing the result carefully. Small matters. A test that changes five things at once tells you nothing when it fails, because you do not know which change mattered. A test that changes one thing tells you exactly what you learned.
+
+I test against my own copies and my own lab where I can, and I keep the tests small enough to repeat. If a test works, I run it again to make sure it was not luck. If it fails, I write down what happened, not just that it failed. The exact error, the exact response, the exact behaviour: those details are the material the next theory is built from.
+
+**Document.** Every loop ends with a note, even when the test failed, especially when the test failed. The note says what I tried, what happened, and what I will try next. Without it, I will repeat the same failed test an hour later, because I will have forgotten I already tried it. With it, the work accumulates. The notes are the investigation, in the same way a lab notebook is the experiment. The flags are the outcome. The notes are the proof that the outcome was earned by method, not by guessing.
+
+## Note-taking: the investigation is the notes
+
+I take notes the way I take notes in lab work: one section per problem, timestamps where they matter, and a strict separation between what I observed and what I concluded. "The application returned an error page" is an observation. "The application is vulnerable here" is a conclusion, and it does not belong in the note until a test supports it.
+
+The per-problem section has four lines that repeat: given, tried, ruled out, next. "Given" is the enumeration, copied from the start and added to as I find more. "Tried" is the list of tests, with the result of each. "Ruled out" is the list of theories that failed, so I do not revisit them. "Next" is the one thing I will try when I come back to this problem. That last line is the most important one, because competitions are long, and I will come back to problems after working on others. "Next" is how I resume in seconds instead of spending ten minutes remembering where I was.
+
+I also keep a separate short list of ideas that are not tied to one problem: a technique I remembered, a tool option I want to try, a pattern I noticed. Those ideas are easy to lose in the middle of a problem, and they are often the thing that solves a different problem an hour later. Writing them down takes seconds. Remembering them without writing them down takes luck.
+
+The notes serve a second purpose after the event: they are the writeup. A good set of competition notes can be turned into a writeup with little extra work, because the writeup is the notes with the dead ends trimmed and the reasoning filled in. A competition with no notes leaves nothing behind except a placement, and a placement does not teach anyone, including me, how it was earned.
+
+<Callout type="NOTE">
+If you remember one rule from this article, make it this one: write down every failed test. Failed tests are the map of where the flag is not, and a map of where it is not is what narrows the search to where it is.
+</Callout>
+
+## Time management: choosing what not to solve
+
+Time is the one resource a competition does not give back, and managing it is a skill of its own. My approach is simple, and it has three parts: triage first, timebox everything, and know when to stop.
+
+**Triage first.** Before I commit to any problem, I spend a short time looking at all of them. The goal is not to solve anything yet. It is to sort the problems into three piles: looks solvable now, looks hard but possible, and looks out of reach for now. The sorting is rough, and it is allowed to be wrong, but it stops me from spending two hours on the first problem I opened, while an easier problem sits untouched.
+
+**Timebox everything.** Each problem gets a time budget, decided in advance, and when the budget runs out I stop, write down the "next" line, and move on. The budget depends on the problem and on how much time is left, but the principle does not change: a problem that has eaten its budget without progress is a problem that is telling me my theories are wrong, and the right response is fresh eyes later, not more of the same effort now. Coming back to a problem after working on something else is one of the most reliable ways to see what I missed.
+
+**Know when to stop.** There are problems I will not solve in the time available, and admitting that early is a strength, not a surrender. Every hour spent on a problem I cannot solve is an hour not spent on three problems I can. The results at CSCB 2026 reflect this directly: 26 flags is a count of breadth, of many problems worked through with the loop, not of one problem wrestled with for the whole event. Breadth comes from moving on. Depth comes from returning to a problem with a better theory, not from refusing to leave it.
+
+I also plan breaks. A tired mind repeats failed tests and misses plain details, and a short break is cheaper than an hour of tired work. Stepping away, eating, and coming back is part of the method, not a break from it.
+
+## What the results mean, and what they do not mean
+
+A placement is a measurement, and like any measurement it needs to be read carefully. Here is how I read mine from CSCB 2026.
+
+**#1 Web Junior** tells me where my preparation was strongest. Web is the area I practise most, through my own lab work and through the web security writing on this blog, and the result reflects that investment. It tells me my method for web problems, enumerate the application, form a specific theory, test small, is working. It also tells me where to keep investing, because a strength kept sharp stays a strength, and a strength neglected fades.
+
+**#3 overall Junior** tells me the work was not narrow. A single strong area can carry a category placement, but an overall placement needs breadth, and breadth means the loop worked across different kinds of problems, not just the ones I like most. That matters to me more than the category placement, because real security work is broad, and a method that only works on one kind of problem is a method with a short future.
+
+**#26 of 806** is the number I think about most, because it puts the result in context. There were 806 participants, and I finished 26th overall. That is a strong result, and it is also a clear picture of the distance to the top. The people ahead of me are not unreachable. They are simply further along the same path, with more practice, more breadth, or a better day. The number gives me a direction, not a verdict.
+
+**26 flags earned** is the count behind the placements, and I read it as evidence that the method held up across many problems. One flag can be luck. Twenty-six is a method working repeatedly: enumerate, hypothesize, test, document, repeat, across a whole event. It is also a reminder that each flag was a separate investigation, with its own notes and its own dead ends, and that the total is the sum of those small pieces of work.
+
+What the results do not mean is just as important. They do not mean I know everything, or that I would place the same way in a different event with different problems. They do not mean the method is finished. They mean the method works, and that the next step is to widen it: more breadth in the areas where I am weaker, more practice in the areas where I am stronger, and better notes, because the notes are what make the next event start from a higher place than this one.
+
+<Diagram title="My CSCB 2026 results" caption="My verified results from CSCB 2026: first place Web Junior, third place overall Junior, 26th of 806 overall, with 26 flags earned.">
+<svg viewBox="0 0 720 320" width="100%" role="img" aria-labelledby="documenting-a-ctf-investigation-cscb-2026-d2-title documenting-a-ctf-investigation-cscb-2026-d2-desc">
+<title id="documenting-a-ctf-investigation-cscb-2026-d2-title">CSCB 2026 results</title>
+<desc id="documenting-a-ctf-investigation-cscb-2026-d2-desc">A figure showing four verified results from CSCB 2026: first place Web Junior, third place overall Junior, 26th of 806 overall, and 26 flags earned.</desc>
+<rect x="24" y="24" width="324" height="124" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="186" y="84" textAnchor="middle" fontSize="40" fontWeight="700" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">#1</text>
+<text x="186" y="116" textAnchor="middle" fontSize="12" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">WEB JUNIOR RANK</text>
+<rect x="372" y="24" width="324" height="124" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="534" y="84" textAnchor="middle" fontSize="40" fontWeight="700" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">#3</text>
+<text x="534" y="116" textAnchor="middle" fontSize="12" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">OVERALL JUNIOR RANK</text>
+<rect x="24" y="172" width="324" height="124" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="186" y="232" textAnchor="middle" fontSize="40" fontWeight="700" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">#26 of 806</text>
+<text x="186" y="264" textAnchor="middle" fontSize="12" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">OVERALL PLACEMENT</text>
+<rect x="372" y="172" width="324" height="124" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="534" y="232" textAnchor="middle" fontSize="40" fontWeight="700" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">26</text>
+<text x="534" y="264" textAnchor="middle" fontSize="12" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">FLAGS EARNED</text>
+</svg>
+</Diagram>
+
+## After the event: turning notes into learning
+
+The competition ends, but the learning does not, and the days after an event are when most of the value is captured. I do three things.
+
+First, I read my notes while the event is still fresh, and I mark the moments where the method worked and where it broke. A theory that failed three times before the right one appeared is a lesson about how I form theories. A problem I abandoned too early is a lesson about timeboxing. A problem I solved quickly is a lesson about what I already know well. The notes contain all of this, but only if I read them before I forget the context.
+
+Second, I revisit the problems I did not solve, without the clock, and I work through them slowly. The pressure is gone, and the investigation can take the time it needs. This is where the deepest learning happens, because I can follow a theory to its end instead of abandoning it for the next problem. The problems I did not solve are the most honest map of what to study next.
+
+Third, I write it down. A short writeup, even a private one, forces me to explain the reasoning in order, and explaining in order reveals the gaps in my own understanding. This article is that writeup, in the form I find most useful: method first, results second, and no detail that does not belong to me to share.
+
+<Callout type="TIP">
+Do the review within a few days, while you still remember why you tried what you tried. A month later the notes will still be there, but the reasoning behind them will be gone, and the review will be guesswork instead of learning.
+</Callout>
+
+## What to remember
+
+A CTF is an investigation with a clock. Prepare the tools, the notes, and the routine before the event. Work each problem as a loop: enumerate what is given, form a specific theory, test it with the smallest possible change, and write down what happened, including the failures. Triage the problems before committing, timebox each one, and move on when the budget is spent, because breadth is earned by moving on and returning with fresh eyes. And after the event, read the notes, revisit the unsolved problems without pressure, and write the method down, so the next event starts from a higher place.
+
+My results at CSCB 2026, #1 Web Junior, #3 overall Junior, #26 of 806, with 26 flags earned, are the outcome of that method, repeated many times across one event. The method is the part I keep. The placements are the part that tells me it is working.
+
+## References
+
+No external sources are cited for this article. The results stated here, CSCB 2026, #1 Web Junior, #3 overall Junior, #26 of 806, and 26 flags earned, are my own verified results from the event. The method described is my own practice, and no challenge, flag, or solution from the event is described.

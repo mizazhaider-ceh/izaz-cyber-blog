@@ -1,0 +1,251 @@
+---
+title: "Exploring reverse engineering fundamentals"
+slug: "exploring-reverse-engineering-fundamentals"
+description: "How to start reading a binary you did not write, from triage to static analysis to dynamic checks, and what each tool is actually for."
+date: "2026-11-18"
+category: "Reverse Engineering"
+tags: ["reverse", "binary", "ghidra", "assembly"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+A binary is a program with its source code removed. The compiler took human readable code, turned it into machine instructions, and threw away the names, the comments, and the structure that made the code understandable. Reverse engineering is the work of reading what is left and rebuilding an understanding of what the program does, without the source, and often without running it.
+
+That sounds intimidating, and the first time you open a binary in a disassembler it is. Thousands of functions, addresses instead of names, and a wall of assembly. But the work is not about reading every instruction. It is about asking good questions in the right order, and letting the tools answer the cheap questions first. This article walks through that order: triage, static analysis, dynamic checks, and verification, grounded in the tools I actually use, including Ghidra and the lessons from building my own binary parser.
+
+## Start with the question, not the tool
+
+Every reverse engineering task starts with a question. "What does this program do when it starts?" is a question. "Where does it check the licence?" is a question. "Open this binary and tell me everything" is not a question, and it is how beginners lose a whole evening staring at a listing.
+
+The question decides the method. If you want to know what files a program touches, running it and watching is faster than reading its code. If you want to know how it validates an input, reading the validation function is faster than guessing inputs for hours. If you want to know what a file format looks like, parsing its bytes by hand teaches you more than any tool output. The workflow in this article is a loop around the question: triage narrows it, static analysis answers part of it, dynamic checks test the answer, and the result usually produces a better question.
+
+The examples in this article use binaries I built myself, clearly labelled illustrative snippets, and my own APK pipeline code. I do not reverse engineer commercial software as an example here, and I do not present anyone else's program as a case study. The skills transfer. The targets are mine.
+
+## Triage: five minutes that save five hours
+
+Triage is the short first pass that tells you what you are holding. It answers the format, the architecture, the size, and the first hints about behaviour, and it takes minutes. Skipping it is the most common beginner mistake: opening a 40 megabyte binary in a decompiler with no idea what it is, and drowning.
+
+The first triage command is `file`, which reads the header and tells you the format and architecture:
+
+```bash
+file myprogram
+```
+
+Illustrative output:
+
+```text
+Illustrative output:
+myprogram: ELF 64-bit LSB executable, x86-64, dynamically linked
+```
+
+One line, and you already know the format (ELF, the Linux executable format), the word size (64-bit), the byte order (little endian), the architecture (x86-64), and the linking style (dynamically linked, so it uses shared libraries). That decides which tools apply and which do not.
+
+The second triage step is `strings`, which prints the printable text inside the binary: error messages, file paths, URLs, format strings, and library names. Strings are the fastest way to find the interesting parts of a program, because programmers write messages for humans, and those messages survive compilation:
+
+```bash
+strings myprogram | head -40
+```
+
+Illustrative output:
+
+```text
+Illustrative output:
+/usr/lib/libc.so.6
+Usage: myprogram [options]
+error: config file not found
+checking licence, please wait
+```
+
+Four lines, and you already have a map: the program reads a config file, it checks something it calls a licence, and it prints usage text. The string "checking licence" is a starting point, not a conclusion. It tells you where to look next, which is the whole job of triage.
+
+The third triage step is a hash. Before you do anything else with a binary, record its SHA-256 hash, so you can prove later that you are still looking at the same file, and so your notes refer to one exact artifact:
+
+```bash
+sha256sum myprogram
+```
+
+The fourth step is checking whether the binary is stripped. A stripped binary has its symbol table removed, which means function names are gone and the decompiler will show generated names instead. An unstripped binary keeps its symbols, and reading it is much easier. The `file` output sometimes says this directly, and `nm` will tell you quickly:
+
+```bash
+nm myprogram 2>&1 | head -5
+```
+
+If `nm` reports "no symbols", the binary is stripped, and you should expect the static analysis stage to take longer. That expectation matters, because it changes how you plan the work.
+
+<Callout type="TIP">
+Write the triage results down before you open the decompiler. Format, architecture, stripped or not, interesting strings, hash. Five lines in a note. When the analysis gets confusing three hours later, those five lines are the ground you stand on.
+</Callout>
+
+## What a binary is made of
+
+Before the tools make sense, the format has to make sense. A binary is not one undifferentiated block of code. It is a container with a header, tables, and sections, each with a job, and the operating system loader reads the header to decide how to run it. The two formats you will meet most are ELF on Linux and PE on Windows, and they solve the same problem in different ways.
+
+An ELF file starts with an ELF header at offset zero of the file. The header identifies the file: the magic bytes, the class (32-bit or 64-bit), the byte order, the machine type, and the entry point, the virtual address where execution starts. It also holds two offsets: one to the program header table, and one to the section header table. The program header table describes segments, the chunks the loader maps into memory. The section header table describes sections, the logical groupings the linker and the debugger care about. The ELF manual page puts the distinction simply: the loader sees segments, the linker sees sections, and a segment contains one or more sections.
+
+A PE file starts with a DOS header and a small DOS stub, kept for compatibility, and the DOS header holds an offset to the real PE header. The PE header consists of a four byte signature, the letters "PE" followed by two null bytes, a COFF file header, and an optional header that is required for executable files despite its name. The COFF header records the machine type, the number of sections, and the size of the optional header. After the headers comes the section table, and then the sections themselves. Microsoft's PE specification notes that the Windows loader limits a file to 96 sections.
+
+The sections themselves are the same idea in both formats, and three of them do most of the work. The `.text` section holds the executable code. The `.rodata` section holds read-only data, including the strings you saw in triage. The `.data` section holds initialised writable data, and `.bss` holds zero-initialised data that takes no space in the file, because the loader simply fills it with zeroes at runtime. If you know which section you are in, you know what kind of thing you are looking at, and that is half of reading a binary.
+
+<Diagram title="A binary's anatomy, ELF and PE side by side" caption="Both formats are a header, then tables, then sections. The code lives in .text, the strings in .rodata, and the entry point tells the loader where execution starts.">
+<svg viewBox="0 0 720 372" width="100%" role="img" aria-labelledby="exploring-reverse-engineering-fundamentals-d2-title exploring-reverse-engineering-fundamentals-d2-desc">
+<title id="exploring-reverse-engineering-fundamentals-d2-title">Binary anatomy layer stack</title>
+<desc id="exploring-reverse-engineering-fundamentals-d2-desc">A layer stack of six rows showing headers, tables, and the .text, .rodata, .data, and .bss sections, with the ELF and PE names for each row.</desc>
+<rect x="120" y="24" width="480" height="44" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="140" y="42" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Headers</text>
+<text x="580" y="42" textAnchor="end" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">ELF header / DOS stub + PE sig</text>
+<rect x="120" y="80" width="480" height="44" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="140" y="98" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Tables</text>
+<text x="580" y="98" textAnchor="end" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">program + section headers</text>
+<rect x="120" y="136" width="480" height="44" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="140" y="154" fontSize="13" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">.text</text>
+<text x="580" y="154" textAnchor="end" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">code, entry point e_entry</text>
+<rect x="120" y="192" width="480" height="44" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="140" y="210" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">.rodata</text>
+<text x="580" y="210" textAnchor="end" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">read-only data, strings</text>
+<rect x="120" y="248" width="480" height="44" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="140" y="266" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">.data</text>
+<text x="580" y="266" textAnchor="end" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">initialised writable data</text>
+<rect x="120" y="304" width="480" height="44" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="140" y="322" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">.bss</text>
+<text x="580" y="322" textAnchor="end" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">zero-filled, no file bytes</text>
+</svg>
+</Diagram>
+
+The entry point deserves a pause, because beginners often assume a program starts at `main`. It does not, quite. The entry point in the header is where the loader transfers control, and for a C program that is usually a startup routine that sets things up and then calls `main`. In a stripped binary, finding `main` means following that startup code to the function it calls. In Ghidra, that is one of the first things you learn to do, and it is a good example of the general skill: follow the calls until you reach the code that does the work you care about.
+
+## Static analysis: reading without running
+
+Static analysis means studying the binary without executing it. It is the safe way to start, because nothing in the binary runs, and it is the way to answer questions about logic: how does this check work, what does this function compute, what happens if the input is different?
+
+Ghidra is the tool I reach for here. It is a software reverse engineering framework created and maintained by the National Security Agency, free and open source, and it combines a disassembler, a decompiler, graphing, and scripting in one program. You create a project, import the binary, and run auto-analysis. Ghidra parses the headers, finds the functions, and builds the views you will spend your time in.
+
+Three views matter most. The **listing** shows the disassembly: the machine instructions, one per line, with addresses. The **decompiler** shows the same function as approximate C-like pseudocode, which is usually the view you read first, because it is closer to how a programmer thinks. The **symbol tree** lists the functions, labels, and data, and it is how you navigate. The decompiler does not recover the original source code. Compilation discards names, comments, and formatting, and the decompiler reconstructs a plausible equivalent, not the original. Treat its output as a reading aid, not as ground truth, and check anything important against the listing.
+
+The working method in static analysis is not reading top to bottom. It is jumping along connections. A string you found in triage leads to the function that uses it. That function calls another function, and you follow the call. A cross-reference, or XREF, shows every place a function or a variable is used, and following XREFs is how you map a program's shape without reading all of it. Ghidra's function call graph draws that map visually: what the current function calls, and what calls it.
+
+Renaming is the other half of the work. In a stripped binary, Ghidra names functions `FUN_00401020` and variables `local_18`. Those names carry no meaning, and a listing full of them is unreadable. As you work out what a function does, you rename it: `check_licence`, `read_config`, `parse_header`. The rename is saved in the Ghidra project, and the next time you open it, the meaning is still there. Good reverse engineering is mostly this: turning generated names into real names, one function at a time, until the program reads like something a person wrote.
+
+Two habits keep static analysis honest. First, **check the decompiler against the disassembly** whenever a conclusion matters. The decompiler can misread a loop, miss a side effect, or simplify a condition in a way that changes the meaning. The listing is the ground truth. Second, **write down what you have proven and what you have only guessed**. A note that says "this function probably validates the header" is useful. A note that says "this function validates the header" when you have not proven it is a trap you set for your future self.
+
+<Callout type="NOTE">
+Static analysis is safe, but it is not complete. A program can hide behaviour behind data that only exists at runtime: a decrypted string, a downloaded configuration, a value read from the environment. When the static view stops answering, that is the signal to move to dynamic checks, not to stare harder.
+</Callout>
+
+## What building my own parser taught me
+
+The fastest way I have learned to understand a binary format is to parse it by hand. My APK security pipeline reads Android app packages, and the first thing it has to do is read `AndroidManifest.xml`. Inside an APK, the manifest is not text XML. It is binary XML, a compact format called AXML, made of chunks. Every chunk starts with a type, a header size, and a size. The file starts with a magic number, then a string pool chunk holding every string in the file, then start element chunks. I wrote my own parser for it, in Python, using only the standard library, because the pipeline is meant to run anywhere Python runs, with no extra dependencies.
+
+Writing that parser taught me more about binary formats than reading about them ever did, and it taught me one lesson I now carry into every reverse engineering task. My parser passed every test I wrote, and then it failed on the first real APK. The bug was one wrong offset: a field called `attributeStart` is relative to the end of the node header, not relative to the chunk start, and my own test writer had stored the wrong value, so my tests were testing my misunderstanding, not the format. The fix was one line, and the verification was to check the parser against androguard as ground truth, on real APKs, until the package names, permission counts, and component counts matched exactly.
+
+The lesson is general. **Your tools can agree with each other and still be wrong, if they share your mistake.** That is true of a parser you wrote, and it is true of a decompiler reading a binary. The defence is the same in both cases: verify against an independent source. For the parser, the independent source was androguard. For a decompiled function, the independent source is the disassembly, or a dynamic run that shows the function behaving the way you think it does.
+
+Parsing a format by hand also teaches you the shape of binary data in a way that using a tool does not. A chunk header, a string pool, a table of offsets: once you have walked those structures yourself, you recognise them in every format you meet afterwards, ELF, PE, AXML, and the next one. If you want to get better at reverse engineering, pick a small binary format and write a parser for it. It is the single most effective exercise I know.
+
+## Dynamic analysis: watching it run
+
+Dynamic analysis means observing the program while it runs. It answers the questions static analysis cannot: what files does it open, what network connections does it make, what does it do with this specific input, and what happens step by step inside a function?
+
+The first rule of dynamic analysis is isolation. An unknown binary runs in a virtual machine or a container you can throw away, never on your main system, and never on a network with anything you care about. The analysis machine has no real credentials, no real data, and a snapshot you can restore. That is not paranoia. It is the same rule as the lab network in the recon pipeline: the work happens inside a boundary you control.
+
+The cheapest dynamic tool is the system call tracer. On Linux, `strace` shows every system call a program makes: files opened, network connections, memory allocated. Run a program under `strace` with an input, and you get a transcript of what it actually did, which is often more informative than an hour of reading code:
+
+```bash
+strace -f -e trace=openat,connect \
+  ./myprogram --help
+```
+
+Illustrative output:
+
+```text
+Illustrative output:
+openat(AT_FDCWD, "/etc/myprogram.conf", O_RDONLY) = -1 ENOENT
+openat(AT_FDCWD, "config.txt", O_RDONLY) = 3
+```
+
+Two lines, and you know the program looked for a system config file, did not find it, and fell back to a local one. That is a fact about behaviour, not an inference from code, and it took seconds.
+
+A debugger is the heavier tool. It lets you stop the program at a chosen address, inspect registers and memory, step through instructions one at a time, and change values to see what happens. Ghidra is not a debugger, so this is where a separate debugger comes in, and where the static and dynamic work meet: you find the address of the interesting function in Ghidra, set a breakpoint there in the debugger, and watch what goes in and what comes out. The two views together are stronger than either alone, because the static view tells you where to stop, and the dynamic view tells you what actually happens there.
+
+Runtime instrumentation is a third option. Frida, for example, lets you inject JavaScript into a running process and observe or change function calls as they happen. I have used it to bypass checks in my own test builds, where the point was to learn how the check worked by watching it be skipped. The principle is the same as the debugger, with a different shape: instead of stopping the program, you watch it from the inside while it runs.
+
+The discipline of dynamic analysis is the same as the discipline of static analysis: **write down what you observed, and separate it from what you concluded**. "The program opened config.txt" is an observation. "The program requires config.txt" is a conclusion, and it needs one more test, running without config.txt, before it earns that wording.
+
+<Callout type="WARNING">
+Never run a binary you do not trust on your main machine, and never run it on a network that can reach real systems or real data. Use a disposable virtual machine, take a snapshot before you start, and restore it when you are done. If the binary is suspected malware, the right environment is an isolated lab with no network route out, and the right next step is to stop and ask someone experienced before going further.
+</Callout>
+
+## The workflow as a loop
+
+The four stages form a loop, not a straight line. Triage gives you a starting point. Static analysis builds a theory. Dynamic checks test the theory. Verification decides whether the theory survives, and a failed test sends you back to static analysis with a better question.
+
+<Diagram title="The reverse engineering workflow" caption="Triage narrows the question, static analysis builds a theory, dynamic checks test it, and verification either confirms it or sends you back with a better question.">
+<svg viewBox="0 0 720 200" width="100%" role="img" aria-labelledby="exploring-reverse-engineering-fundamentals-d1-title exploring-reverse-engineering-fundamentals-d1-desc">
+<title id="exploring-reverse-engineering-fundamentals-d1-title">Reverse engineering workflow</title>
+<desc id="exploring-reverse-engineering-fundamentals-d1-desc">A four stage process diagram: triage, static analysis, dynamic analysis, and verify, with a dashed return arrow from verify back to static analysis.</desc>
+<defs>
+<marker id="re-d1-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+<rect x="16" y="36" width="150" height="64" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="91" y="60" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">1. Triage</text>
+<text x="91" y="80" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">file, strings, hash</text>
+<rect x="200" y="36" width="150" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="275" y="60" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">2. Static</text>
+<text x="275" y="80" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Ghidra, decompile</text>
+<rect x="384" y="36" width="150" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="459" y="60" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">3. Dynamic</text>
+<text x="459" y="80" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">strace, debugger</text>
+<rect x="568" y="36" width="150" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="643" y="60" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">4. Verify</text>
+<text x="643" y="80" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">test the theory</text>
+<line x1="168" y1="68" x2="198" y2="68" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#re-d1-arrow)" />
+<line x1="352" y1="68" x2="382" y2="68" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#re-d1-arrow)" />
+<line x1="536" y1="68" x2="566" y2="68" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#re-d1-arrow)" />
+<path d="M 643 100 L 643 164 L 275 164 L 275 102" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="5,4" markerEnd="url(#re-d1-arrow)" />
+<rect x="382" y="148" width="176" height="18" fill="var(--background)" />
+<text x="470" y="161" textAnchor="middle" fontSize="10" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">theory fails, go again</text>
+</svg>
+</Diagram>
+
+The loop is the method. A beginner reads a function, decides what it does, and moves on. An experienced analyst reads a function, forms a theory, and then looks for the observation that would prove it wrong. The difference is not talent. It is the habit of testing your own reading, and it is a habit you can practise from the first binary you open.
+
+## Common beginner mistakes
+
+A few mistakes show up so often that they are worth naming directly.
+
+**Reading the decompiler as if it were source code.** The decompiler output is an approximation. It can be wrong about a condition, a loop bound, or a type, and the more optimised the binary, the more likely that is. When a conclusion matters, read the listing.
+
+**Trying to read everything.** A binary with thousands of functions cannot be read end to end, and it does not need to be. Follow the strings, follow the calls, follow the question. Most functions are library code, startup code, or code that has nothing to do with your question, and skipping them is not laziness. It is the method.
+
+**Running an unknown binary on a host machine.** This one is not a learning mistake. It is a safety mistake, and it only needs to happen once. Isolate first, run second, and treat every binary you did not build as untrusted until you have reason to think otherwise.
+
+**Trusting the first theory.** The first reading of a function is often wrong in a small way: a comparison is inverted, a buffer length is misread, a call is assumed to succeed. The loop exists to catch that. Test the theory, and be willing to be wrong, because being wrong quickly is how you get to being right.
+
+**Not writing anything down.** Reverse engineering is slow, and it happens across sessions. Notes are what make the second session start where the first one ended, instead of starting over. Rename functions in Ghidra, add comments to the interesting lines, and keep a short note file beside the project with the question, the theory, and the tests.
+
+## A practice path that actually works
+
+The best practice targets are programs you compile yourself. Write a small C program, compile it with symbols, and then compile it again stripped, with optimisation on, and compare what Ghidra shows you in each case. Change one thing at a time: add a string check, add a loop, add a function call, and watch how the disassembly changes. You are building a mental model of what the compiler does to code, and there is no faster way to build it than to watch it happen to code you wrote.
+
+Next, pick a small real format and parse it by hand, the way I did with AXML. ELF itself is a good choice: write a short Python script that reads the ELF header, prints the entry point, and lists the sections. The ELF manual page documents every field, and `readelf` gives you ground truth to check against. When your script and `readelf` agree, you understand the format. When they disagree, you have found the exact place where your understanding is wrong, which is the most useful thing a practice exercise can give you.
+
+Then move to a small program someone else wrote for practice, a crackme style exercise built for learning, where the goal is stated up front and the program is meant to be read. The goal matters: a practice target with a clear question teaches the workflow, while a random binary with no question teaches only frustration.
+
+Finally, keep a lab notebook. One page per binary: the hash, the triage notes, the question, the theories and their tests, and the conclusion. Over a few months, that notebook becomes a record of how your reading improves, and it becomes the evidence that you can do the work, not just talk about it.
+
+<Callout type="TIP">
+Learn a little assembly, but learn it as a reading skill, not as a writing skill. You need to recognise a function call, a comparison, a loop, and a memory access when you see them. You do not need to write assembly programs. Read the patterns, and let the decompiler handle the rest, with the listing beside it for the moments that matter.
+</Callout>
+
+## What to remember
+
+Reverse engineering is reading with a method. Triage first, so you know what you hold. Static analysis to build a theory, following strings and calls instead of reading everything. Dynamic checks to test the theory, in an isolated environment. Verification against an independent source, because your tools can share your mistake. And notes, because the work spans sessions and the names you give things are the understanding itself.
+
+The binary is not trying to confuse you. It is simply a program with the helpful parts removed. The work is to put enough of them back, one renamed function at a time, until the program makes sense.
+
+## References
+
+- Ghidra Software Reverse Engineering Framework, National Security Agency, disassembly, decompilation, graphing, and scripting, free and open source: https://ghidra-sre.org/
+- Ghidra source repository and documentation, National Security Agency: [Ghidra on GitHub](https://github.com/NationalSecurityAgency/ghidra)
+- elf(5), Linux manual page, format of Executable and Linking Format (ELF) files, ELF header, program header table, and section header table: https://man7.org/linux/man-pages/man5/elf.5.html
+- Microsoft Portable Executable and Common Object File Format Specification, PE header, COFF header, optional header, and section table: [PE Format specification](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)
