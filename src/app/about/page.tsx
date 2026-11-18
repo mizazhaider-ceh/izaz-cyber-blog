@@ -1,0 +1,113 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { site } from "@/lib/site";
+
+export const metadata: Metadata = {
+  title: "About Me",
+  description:
+    "About Muhammad Izaz Haider: security researcher, builder, and writer on cybersecurity, AI security, and engineering.",
+};
+
+export default function About() {
+  return (
+    <div className="mx-auto max-w-[720px] px-6 py-16 md:py-24">
+      <h1 className="text-center font-display text-5xl font-bold leading-tight text-text-primary md:text-6xl">
+        About Me
+      </h1>
+
+      <figure className="mx-auto mt-12 w-fit text-center">
+        <div
+          aria-label="Portrait placeholder"
+          className="flex h-48 w-48 items-center justify-center rounded-xl border border-border bg-surface font-display text-5xl font-bold text-text-muted"
+        >
+          IH
+        </div>
+        <figcaption className="mt-4 font-mono text-xs text-text-muted">
+          A portrait will go here.
+        </figcaption>
+      </figure>
+
+      <div className="mt-12 space-y-6 text-base leading-8 text-text-secondary">
+        <p>
+          I am <strong className="text-text-primary">Muhammad Izaz Haider</strong>, a security
+          researcher and builder. I learn by building things, breaking them, and writing down what
+          actually happened, so the next person does not have to guess.
+        </p>
+        <p>
+          I hold the <strong className="text-text-primary">CNSP with Merit</strong>. In the CSCB
+          2026 competition I placed <strong className="text-text-primary">#1 Web Junior</strong>,{" "}
+          <strong className="text-text-primary">#3 overall Junior</strong>,{" "}
+          <strong className="text-text-primary">#3 Howestian</strong>, and{" "}
+          <strong className="text-text-primary">#26 of 806</strong>, earning{" "}
+          <strong className="text-text-primary">26 flags</strong>.
+        </p>
+        <p>
+          From November 2025 to June 2026 I worked part-time, remotely, at{" "}
+          <strong className="text-text-primary">Damno Solutions</strong> as a Junior DevSecOps and
+          AI Security Engineer. There I delivered{" "}
+          <strong className="text-text-primary">13 vulnerabilities</strong> and fixed{" "}
+          <strong className="text-text-primary">2 critical ones, an RCE and a SQL injection</strong>.
+        </p>
+        <p>
+          Since February 2026 I have worked part-time as a{" "}
+          <strong className="text-text-primary">Bug Bounty Hunter on YesWeHack</strong>.
+        </p>
+        <p>
+          In my first year of study I earned{" "}
+          <strong className="text-text-primary">60 out of 60 credits, on the first attempt, with no
+          retakes</strong>.
+        </p>
+        <p>
+          I have studied the eJPT and eWPT courses through INE. I do not yet hold either
+          certificate, and I am working towards them.
+        </p>
+        <p>
+          My interests are cybersecurity, AI security, engineering, building things, and writing
+          about what I learn. This blog is where that writing lives: notes from real builds, not
+          theory copied from elsewhere.
+        </p>
+      </div>
+
+      <nav aria-label="About links" className="mt-12 flex flex-wrap justify-center gap-x-8 gap-y-4">
+        <Link
+          href={site.github}
+          target="_blank"
+          rel="noreferrer"
+          className="font-mono text-sm text-secondary underline underline-offset-4 transition-colors hover:text-primary"
+        >
+          GitHub
+        </Link>
+        <Link
+          href={site.linkedin}
+          target="_blank"
+          rel="noreferrer"
+          className="font-mono text-sm text-secondary underline underline-offset-4 transition-colors hover:text-primary"
+        >
+          LinkedIn
+        </Link>
+        <Link
+          href="/projects"
+          className="font-mono text-sm text-secondary underline underline-offset-4 transition-colors hover:text-primary"
+        >
+          Projects
+        </Link>
+        <Link
+          href="/blog"
+          className="font-mono text-sm text-secondary underline underline-offset-4 transition-colors hover:text-primary"
+        >
+          Writing
+        </Link>
+        <Link
+          href={`mailto:${site.email}`}
+          className="font-mono text-sm text-secondary underline underline-offset-4 transition-colors hover:text-primary"
+        >
+          Email
+        </Link>
+      </nav>
+
+      <p className="mt-16 text-center font-mono text-xs text-text-muted">
+        Created by Muhammad Izaz Haider
+      </p>
+    </div>
+  );
+}

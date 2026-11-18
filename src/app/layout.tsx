@@ -3,7 +3,10 @@ import { Instrument_Sans, JetBrains_Mono, Space_Grotesk } from "next/font/google
 import { Footer } from "@/components/Footer";
 import { Header } from "@/components/Header";
 import { Particles } from "@/components/Particles";
+import { SearchPalette } from "@/components/SearchPalette";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { getAllPosts, getAllProjects } from "@/lib/content";
+import { buildSearchIndex } from "@/lib/search";
 import { site } from "@/lib/site";
 import "./globals.css";
 
@@ -58,6 +61,9 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Search index built at build time from the same MDX content the
+  // pages use, so the Ctrl+K palette can never drift from the site.
+  const searchItems = buildSearchIndex(getAllPosts(), getAllProjects());
   return (
     <html
       lang="en"
@@ -82,6 +88,7 @@ export default function RootLayout({
             {children}
           </main>
           <Footer />
+          <SearchPalette items={searchItems} />
         </ThemeProvider>
       </body>
     </html>
