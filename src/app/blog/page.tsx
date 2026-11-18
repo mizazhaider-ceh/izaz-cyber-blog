@@ -1,12 +1,29 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { getAllPosts } from "@/lib/content";
+import { site } from "@/lib/site";
 import { BlogIndex } from "@/components/BlogIndex";
 
 export const metadata: Metadata = {
   title: "The Writing",
   description:
     "Technical notes, practical guides, research and observations from the world of cybersecurity and engineering.",
+  alternates: {
+    canonical: "/blog",
+  },
+  openGraph: {
+    type: "website",
+    url: `${site.url}/blog`,
+    title: `The Writing | ${site.brand}`,
+    description:
+      "Technical notes, practical guides, research and observations from the world of cybersecurity and engineering.",
+  },
+  twitter: {
+    card: "summary",
+    title: `The Writing | ${site.brand}`,
+    description:
+      "Technical notes, practical guides, research and observations from the world of cybersecurity and engineering.",
+  },
 };
 
 export default function BlogPage() {

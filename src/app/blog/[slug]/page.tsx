@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAllPosts, getPostBySlug } from "@/lib/content";
 import { formatDate, slugify } from "@/lib/format";
+import { articleJsonLd, jsonLdScript } from "@/lib/jsonld";
+import { site } from "@/lib/site";
 import { ArticleRow } from "@/components/ArticleRow";
 import { MdxContent } from "@/components/MdxContent";
 import { TableOfContents, type TocHeading } from "@/components/TableOfContents";
@@ -21,9 +23,30 @@ export async function generateMetadata({
   if (!post) {
     return { title: "Article not found" };
   }
+  const fm = post.frontmatter;
+  const url = `${site.url}/blog/${fm.slug}`;
   return {
-    title: post.frontmatter.title,
-    description: post.frontmatter.description,
+    title: fm.title,
+    description: fm.description,
+    authors: [{ name: fm.author, url: site.url }],
+    alternates: {
+      canonical: `/blog/${fm.slug}`,
+    },
+    openGraph: {
+      type: "article",
+      url,
+      title: `${fm.title} | ${site.brand}`,
+      description: fm.description,
+      authors: [fm.author],
+      publishedTime: fm.date,
+      modifiedTime: fm.updatedAt ?? fm.date,
+      tags: fm.tags,
+    },
+    twitter: {
+      card: "summary",
+      title: `${fm.title} | ${site.brand}`,
+      description: fm.description,
+    },
   };
 }
 
@@ -69,6 +92,10 @@ export default async function ArticlePage({
 
   return (
     <div className="mx-auto max-w-[1140px] px-6 py-16 md:py-24">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(articleJsonLd(post)) }}
+      />
       <article className="mx-auto max-w-[760px]">
         <nav aria-label="Breadcrumb" className="font-mono text-xs text-text-muted">
           <Link href="/" className="transition-colors hover:text-primary">

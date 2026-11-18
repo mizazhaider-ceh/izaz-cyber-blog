@@ -1,8 +1,18 @@
 import type { Metadata } from "next";
+import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Privacy",
   description: "What this site collects, which is nothing beyond a saved theme preference.",
+  alternates: {
+    canonical: "/privacy",
+  },
+  openGraph: {
+    type: "website",
+    url: `${site.url}/privacy`,
+    title: `Privacy | ${site.brand}`,
+    description: "What this site collects, which is nothing beyond a saved theme preference.",
+  },
 };
 
 export default function PrivacyPage() {

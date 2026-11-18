@@ -1,0 +1,116 @@
+---
+title: "PenTrix VulnLab: building a deliberately vulnerable lab"
+slug: "pentrix-vulnlab-building-a-deliberately-vulnerable-lab"
+description: "Why I built a lab with 201 intentionally vulnerable challenges across 29 modules, and how I made sure the flags could only be earned by real exploitation."
+date: "2026-10-20"
+category: "Web Security"
+tags: ["pentrix", "vulnlab", "web security", "express", "sqlite", "ctf"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: true
+---
+
+I learn by breaking things. When I started learning web security, the labs I tried let me down. Some handed me the flag just for opening a page. Some taught the theory and skipped the part where you actually exploit something. None of them felt like the real websites I wanted to learn to test.
+
+So I built the lab I wished existed. It is called PenTrix VulnLab, and it is an intentionally vulnerable web app with 201 challenges across 29 modules.
+
+## What the lab is
+
+Every challenge is a small, believable website with a real bug inside: a shop, a login portal, a blog, an API. The modules cover the flaws I kept meeting in real testing: cross-site scripting, SQL injection, broken authentication, broken access control, server-side request forgery, file upload, command injection, XXE, template injection, path traversal, CSRF, API flaws, misconfiguration, JWT attacks, session problems, race conditions, business logic flaws, open redirect, host header injection, CORS, prototype pollution, crypto failures, OAuth flaws, postMessage flaws, client-side template injection, HTTP layer flaws, JSONP, CSV formula injection, and ReDoS.
+
+The stack is deliberately boring: Express and SQLite, with plain CSS and JavaScript and no build step. Clone it, read it, run it. That was a design choice, not a shortcut. A lab for learning should have nothing hiding behind a build.
+
+## How to run it
+
+The fastest way is Docker. The compose file binds to `127.0.0.1` only, ships a healthcheck, drops Linux capabilities, and caps CPU and memory.
+
+```bash
+docker compose up --build
+```
+
+Open the URL the app prints on boot. By default that is localhost on port 3000.
+
+Without Docker, with Node 20 or newer:
+
+```bash
+npm install
+npm start
+```
+
+Set `SESSION_SECRET` to a private value for any graded or shared use. Left unset, the app falls back to an insecure dev secret, which is fine for local labs only.
+
+The regression suite boots the app on a throwaway database:
+
+```bash
+npm test
+```
+
+## The rule that shaped everything
+
+One rule shaped the whole build: nothing is earned without a genuine exploit. A bare request with no exploit behind it gets a `400` and no flag. Replaying a stolen token gets a `400` and no flag. Just visiting a demo page gets nothing.
+
+That sounds obvious, but it is where most labs fail. If a flag can be earned by opening a page, the lab is teaching page opening, not exploitation. So every challenge ships with tests proving the real path works and the fakes fail. The verification lives in `lib/flags.js`, which looks up the per-install flag and verifies the exploit before awarding it. Challenge code never touches flag values.
+
+Flags are randomly generated per install at first boot on your own machine. No flag literal exists in any tracked file, so reading the source on GitHub reveals nothing. Your flags differ from everyone else's, and sharing them proves nothing, because only genuine exploits earn flags.
+
+## How a session goes
+
+You pick a module on the home page. There are 29 to choose from, with search and difficulty filters. You read the briefing, then open a challenge. Each one looks and behaves like a real little website. The bug is there to be discovered, not announced.
+
+You find the bug and exploit it the way a real attacker would. This lab teaches Burp Suite first: intercept with the Proxy, tamper in the Repeater, automate the boring parts with the Intruder. Burp Community edition clears all 201 challenges. Pro adds Scanner and Collaborator, which you will not need here. Curl still works for quick checks and one-off requests, but it is no longer the lab's default voice.
+
+When the exploit works, the flag lands on the scoreboard. If you are stuck, reveal the hint. Still stuck, `SOLUTIONS.md` walks the technique, never the flag.
+
+## Three ideas beyond single challenges
+
+Most labs stop at "find the bug". I wanted the lab to train complete security engineers, so I built three things on top of the challenges.
+
+First, break-then-fix. Capture the flag, then patch the vulnerable code yourself. The lab re-runs the original exploit against your fix in an isolated sandbox. If the exploit fails and the app still works, you earn a fix badge. Offense and defense, in one place. This is still in active development, with the framework in tree and pilot coverage for the SQL injection and XSS modules first.
+
+Second, kill-chain scenarios. A scenario strings challenges from different modules into one story: recon, break in, pivot, escalate, exfiltrate. Three stories ship today: Shop Takeover, API Heist, and Ghost in the CMS. Each unlocks stage by stage and ends with its own scenario flag.
+
+Third, guided career paths. Ordered journeys like Zero to Web Pentester, API Hacker, and Authentication Assassin, with prerequisites, skill tracking, and a verifiable certificate at the finish. Solve every step, download your PNG, prove your skill on any machine running your install.
+
+## How the code is organised
+
+One file per challenge. Each of the 201 challenges owns its file, its page, and its code. A module router like `modules/sqli/index.js` is a thin aggregator, and `modules/sqli/shared.js` holds module helpers. The layout looks like this:
+
+```text
+PenTrix-VulnLab/
+├── app.js                  # Express app, module mounting, scoreboard
+├── lib/
+│   ├── db.js               # SQLite setup and seed
+│   ├── flags.js            # flag lookup, award with exploit verification
+│   ├── fixmode.js          # break-then-fix sandbox runner
+│   └── page.js             # shared page shell, nav, scoreboard
+├── modules/
+│   ├── sqli/
+│   │   ├── index.js        # module contract and challenge registry
+│   │   └── challenges/
+│   │       └── login.js    # one file per challenge
+│   └── ...                 # 28 more modules, same shape
+├── scenarios/              # 3 kill-chain scenarios, staged unlock
+├── paths/                  # 3 career paths, PNG certificates
+├── public/                 # CSS and client JS
+├── data/                   # local app data, gitignored, created on boot
+└── SOLUTIONS.md            # technique walkthroughs, never flags
+```
+
+Every vulnerability is marked in the source with `// VULN:` comments, 281 across the codebase. Solve first, then study the code.
+
+## What I would not do again
+
+I would not start with the content before the verification. Early on, the tempting order is to write 201 challenges and check the flags later. That order produces a lab where some flags leak. The verification rule, that only genuine exploits earn flags, has to exist before the first challenge does, because retrofitting it means re-testing everything.
+
+I would also not underestimate the boring parts. Localhost-only binding, the healthcheck, resource limits, the non-root image, loader validation, and the env-based session secret are not glamorous work. They are the work that makes it safe to tell someone to run intentionally vulnerable software on their own machine.
+
+## Limits, stated plainly
+
+The break-then-fix mode is in development, not finished. The event mode for classroom use is on the way, not shipped. The lab is for learning on your own machine or an isolated lab network. Never deploy it to a public server or expose it to the internet. It is a practice target, not a hardened app.
+
+## References
+
+- PenTrix VulnLab repository: https://github.com/mizazhaider-ceh/PenTrix-VulnLab
+- Tool setup guide in the repo: `docs/TOOL_SETUP_GUIDE.md` (Burp, ZAP, sqlmap, ffuf, gobuster, and nmap walkthroughs)
+- Technique walkthroughs in the repo: `SOLUTIONS.md`
+- Implementation plan in the repo: `docs/roadmap/IMPLEMENTATION_PLAN.md`

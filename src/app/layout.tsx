@@ -42,8 +42,22 @@ export const metadata: Metadata = {
     template: `%s | ${site.brand}`,
   },
   description: site.description,
+  authors: [{ name: site.fullName, url: site.url }],
+  creator: site.fullName,
+  // Canonical base is the intended domain https://izaz.dev, not yet live.
+  alternates: {
+    canonical: "/",
+    types: {
+      "application/rss+xml": "/rss",
+    },
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
   openGraph: {
     type: "website",
+    locale: "en_US",
     url: site.url,
     siteName: site.brand,
     title: `${site.name} | ${site.brand}`,

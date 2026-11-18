@@ -1,0 +1,35 @@
+---
+title: "AgentArsenal"
+slug: "agentarsenal"
+description: "353 skills and 290 sub-skills across 29 domains for AI coding agents, versioned, scored, and CI-checked, with one manifest driving the installer, the docs, and the marketplace."
+category: "AI Tooling"
+tags: ["agentarsenal", "skills", "agents", "automation", "manifest"]
+status: "Active"
+repo: "https://github.com/mizazhaider-ceh/agent-arsenal"
+draft: false
+featured: false
+---
+
+## Problem
+
+A folder of markdown procedures is not a library. At 643 skill files, counts rot, installs drift, and nobody can tell which skill is current, which version is installed, or whether a skill even passes a basic check.
+
+## Approach
+
+One manifest is the source of truth. `arsenal-manifest.json` drives the sparse installer (`install.sh`), the docs site, and the Claude Code marketplace integration. The README catalog, the skill count badges, and the marketplace file are all regenerated from it, so the docs can never drift from the tree.
+
+Every skill carries a version, a freshness date, and a lifecycle state. The installer resolves `requires` and `extends` chains from the manifest, backs up the target before touching it, and supports `--dry-run` previews, pinned installs like `web-sqli@1.0.0`, `--verify` against manifest sha256 hashes, and `--rollback`.
+
+Two machine gates run in CI. `scripts/validate.py` runs 14 checks over every artifact, including frontmatter, semver, dependency resolution, an acyclic graph, required body headings, sub-skill parent edges, manifest consistency, and content hygiene. `scripts/score.py` grades quality from 0 to 100, and merge needs 85 or higher under CI.
+
+## Stack
+
+Markdown skills with structured frontmatter, a JSON manifest, Python scripts for validation, scoring, bundling, and manifest generation, plus a read-only MCP server that serves the catalog and never modifies skill content.
+
+## Status
+
+Active. 353 skills, 290 sub-skills, 36 agents, 25 brains, 15 playbooks, 9 workflows, 47 CLI tools, 19 supported platforms, counted 26 October 2026. 704 scored artifacts average 96.4 out of 100, with the lowest at 87. Offline bundles exist for air-gapped environments.
+
+## Limits
+
+A skill is a procedure, not a guarantee. Scores measure how well a skill is written, versioned, and checked, not whether the procedure it describes is the right one for your job. Freshness dates and lifecycle states need human review. Install only skills you understand, from a manifest you trust, and preview with `--dry-run` before anything is copied.

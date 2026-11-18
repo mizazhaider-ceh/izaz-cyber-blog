@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAllProjects, getProjectBySlug } from "@/lib/content";
+import { site } from "@/lib/site";
 import { MdxContent } from "@/components/MdxContent";
 
 export async function generateStaticParams() {
@@ -18,9 +19,24 @@ export async function generateMetadata({
   if (!project) {
     return { title: "Project not found" };
   }
+  const fm = project.frontmatter;
   return {
-    title: project.frontmatter.title,
-    description: project.frontmatter.description,
+    title: fm.title,
+    description: fm.description,
+    alternates: {
+      canonical: `/projects/${fm.slug}`,
+    },
+    openGraph: {
+      type: "website",
+      url: `${site.url}/projects/${fm.slug}`,
+      title: `${fm.title} | ${site.brand}`,
+      description: fm.description,
+    },
+    twitter: {
+      card: "summary",
+      title: `${fm.title} | ${site.brand}`,
+      description: fm.description,
+    },
   };
 }
 

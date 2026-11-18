@@ -1,0 +1,119 @@
+---
+title: "PowerShell Academy: 18 chapters, one renderer"
+slug: "powershell-academy-18-chapters-one-renderer"
+description: "How I built a free PowerShell learning site with 61 lessons, 102 commands, and 48 glossary terms, driven by structured content data and a single generic lesson renderer."
+date: "2026-11-04"
+category: "PowerShell"
+tags: ["powershell", "nextjs", "typescript", "teaching", "academy"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: true
+---
+
+PowerShell is often taught as a list of commands to memorise. I wanted to teach it as a system to understand: PowerShell works with objects, not just text, the pipeline passes those objects from one command to the next, and a few shaping tools, Select, Where, and Sort, answer most everyday questions.
+
+So I built PowerShell Academy, a free public site that teaches PowerShell from the very first command to Active Directory, remoting, Group Policy, and everyday administration tasks, in clear, simple English. No account, no login, no registration. Open the site and start learning.
+
+It lives at https://powershell-academy-seven.vercel.app/
+
+## The shape of the content
+
+The academy follows one journey in 18 chapters and 61 lessons, in six stages: Foundations, PowerShell Basics, Core Skills, Admin Power, Security Power, and Projects. The library covers 102 commands, from `Get-Help` and `Get-Process` to `Get-ADUser`, `New-ADFineGrainedPasswordPolicy`, `Get-NetFirewallRule`, `Import-Csv`, `Get-WinEvent`, and `Get-SecureBootUEFI`. The glossary covers 48 terms, including cmdlet, pipeline, object, parameter binding, provider, module, remoting, OU, GPO, FGPP, execution policy, Secure Boot, TPM, and constrained language mode.
+
+Every lesson includes learning objectives, a plain English explanation, syntax where it applies, worked examples with copy buttons, common mistakes, and a knowledge check with an explanation. Quizzes include 36 chapter questions in the Knowledge section, plus one knowledge check on every one of the 61 lesson pages.
+
+Six original SVG diagrams explain the ideas that are hardest in text alone: pipeline flow, objects and properties, remoting flow, Active Directory structure, variable boxes, and firewall rule flow. The diagrams are clickable: choose a stage to see its simple explanation.
+
+## One renderer, not 61 pages
+
+The decision that made the whole site manageable was to keep content as structured TypeScript data and render it with one generic lesson renderer. There is no hand written page file per lesson, and no placeholder lessons. The content lives in files like this:
+
+```text
+src/
+  app/                  Routes: home, roadmap, learn, commands, knowledge, glossary, search, about
+  app/learn/[chapter]/[lesson]/   Lesson pages, generated from content data
+  app/commands/[command]/         Command pages, generated from content data
+  components/           Header, theme toggle, code block, quiz, diagrams, search and list clients
+  content/              curriculum.ts (18 chapters, 61 lessons)
+                        commands.ts (102 commands)
+                        glossary.ts (48 terms)
+                        quizzes.ts (36 chapter questions)
+  lib/                  Types, PowerShell tokenizer, search index and lesson navigation
+  styles in app/globals.css       Design tokens, light and dark themes
+```
+
+Because the content is typed, a missing lesson field or a bad quiz answer index fails the build, not the reader. That is the whole point of TypeScript strict mode here: the type checker is the first reviewer of every lesson.
+
+The routes are generated from the same data, so the site stays consistent by construction:
+
+| Route | What it is |
+| --- | --- |
+| `/` | Home: introduction, how the site teaches, chapter overview, and a first example |
+| `/roadmap` | Learning roadmap: all 18 chapters in journey order, with objectives and lesson links |
+| `/learn` | Chapter index: every chapter with its lesson count and introduction |
+| `/learn/[chapter]/[lesson]` | Lesson page: objectives, explanation, syntax, examples, diagrams where they help, common mistakes, knowledge check, and previous and next lesson links |
+| `/commands` | Searchable command library |
+| `/commands/[command]` | One page per command: description, syntax, parameters, example, common mistakes, related lessons |
+| `/knowledge` | Chapter quizzes in the browser, with explanations and related lesson links |
+| `/glossary` | Searchable glossary of PowerShell terms |
+| `/search` | Site search over lessons, commands, and glossary terms, built from the same content data |
+| `/about` | About the site and its creator |
+
+Search is a client side index built from the same lesson, command, and glossary data, so search can never drift from the content.
+
+## The stack, and why plain CSS
+
+The stack is Next.js 14 with the App Router, React 18, TypeScript in strict mode, and a plain CSS design system. No database, no accounts, no server code, and no environment variables are needed. The site is static and public, and the build generates 194 static pages.
+
+I chose plain CSS over a utility framework on purpose, and documented the reasoning in `ARCHITECTURE.md`: no configuration churn, no large utility bundle, and full control over the theme. The design uses soft, tactile surfaces: rounded cards with inner and outer shadows, chunky rounded buttons that press down on click, clear hierarchy, and generous spacing. Both themes are intentionally designed, not inverted copies. Light uses soft neutral backgrounds, white surfaces, and blue and purple accents. Dark uses deep neutral surfaces, controlled contrast, and readable code blocks with the same accents.
+
+Syntax highlighting is a dependency free tokenizer, a small PowerShell tokenizer that colours cmdlets, parameters, strings, comments, variables, and keywords, in light and dark themes.
+
+## Running it locally
+
+Requirements are Node.js 20 or later, and npm.
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:3000 in your browser.
+
+Build the production site:
+
+```bash
+npm run build
+npm run start
+```
+
+Run the tests:
+
+```bash
+npm test
+```
+
+Run the fast content validation script, which does counts and scope checks with no test runner needed:
+
+```bash
+npm run validate
+```
+
+## The honesty rules, enforced by tests
+
+This site follows strict scope rules, and they are enforced by tests, not just by intention. No lab tasks and no exam questions are reproduced. All exercises and quiz questions are original. No source prose is copied verbatim. Lesson text is original writing, in the academy voice. Technical facts are checked against official Microsoft PowerShell documentation.
+
+Every example output is labelled as an illustrative output, showing the shape of a result, never claimed as a live run. The site is a learning reference, not a lab and not a console. Nothing on this site executes PowerShell code. Quizzes run entirely in the browser.
+
+There are no fake statistics, student numbers, reviews, or testimonials. The numbers in this article are real counts from the built content: 18 chapters, 61 lessons, 102 commands, 48 glossary terms, 36 chapter quiz questions, 61 lesson knowledge checks, 194 static pages. No accounts, login, database, XP, badges, leaderboards, CTF content, labs, terminal, command execution, or execution endpoint exists on the site, and the content test fails if an excluded route or feature string appears in the source.
+
+## What I would not do again
+
+I would not write content directly into page files, even for the first few lessons. The moment the third lesson repeats the layout of the first two, you have a renderer waiting to be extracted, and extracting it later means touching every page. Starting with structured data and one renderer cost a little more up front and saved far more across 61 lessons.
+
+## References
+
+- PowerShell Academy: https://powershell-academy-seven.vercel.app/
+- PowerShell Academy repository: https://github.com/mizazhaider-ceh/powershell-academy
+- Microsoft PowerShell documentation, used to check technical facts: https://learn.microsoft.com/powershell/
+- Architecture and content decisions in the repo: `ARCHITECTURE.md`, `DESIGN_SYSTEM.md`, `docs/CURRICULUM_COVERAGE.md`

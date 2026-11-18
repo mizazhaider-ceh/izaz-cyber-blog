@@ -6,6 +6,16 @@ export const metadata: Metadata = {
   title: "Responsible Disclosure",
   description:
     "How to report a security issue responsibly, and what I ask of anyone testing systems.",
+  alternates: {
+    canonical: "/disclosure",
+  },
+  openGraph: {
+    type: "website",
+    url: `${site.url}/disclosure`,
+    title: `Responsible Disclosure | ${site.brand}`,
+    description:
+      "How to report a security issue responsibly, and what I ask of anyone testing systems.",
+  },
 };
 
 export default function DisclosurePage() {

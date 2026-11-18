@@ -1,0 +1,35 @@
+---
+title: "PenTrix VulnLab"
+slug: "pentrix-vulnlab"
+description: "An intentionally vulnerable web app with 201 challenges across 29 modules, built for learning real web security by genuine exploitation."
+category: "Web Security"
+tags: ["pentrix", "vulnlab", "web security", "express", "sqlite"]
+status: "Active"
+repo: "https://github.com/mizazhaider-ceh/PenTrix-VulnLab"
+draft: false
+featured: true
+---
+
+## Problem
+
+When I started learning web security, the labs let me down. Some handed me the flag just for opening a page. Some taught the theory and skipped the part where you actually exploit something. None of them felt like the real websites I wanted to learn to test.
+
+## Approach
+
+I built the lab I wished existed. Every challenge is a small, believable website with a real bug inside: a shop, a login portal, a blog, an API. One file per challenge, one challenge per file, so each of the 201 challenges owns its file, its page, and its code.
+
+The rule that shaped everything: only genuine exploits earn flags. A bare request with no exploit behind it, a replayed token, or a visit to a demo page earns nothing. Verification lives in `lib/flags.js`, and challenge code never touches flag values. Flags are randomly generated per install at first boot on your own machine. No flag literal exists in any tracked file, so reading the source reveals nothing.
+
+On top of the challenges, the lab has three kill-chain scenarios (Shop Takeover, API Heist, Ghost in the CMS), three guided career paths (Zero to Web Pentester, API Hacker, Authentication Assassin) with verifiable certificates, and a break-then-fix mode in active development that lets you patch a challenge and prove the exploit dies.
+
+## Stack
+
+Express and SQLite, plain CSS and JavaScript, no build step. Docker Compose for the one-command local run, bound to `127.0.0.1` only, with a healthcheck, dropped Linux capabilities, and capped CPU and memory.
+
+## Status
+
+Active. 201 challenges across 29 modules, 3 scenarios, 3 career paths. Break-then-fix is in development with pilot coverage for the SQL injection and XSS modules first. Classroom event mode is on the way, not shipped.
+
+## Limits
+
+Intentionally vulnerable software. Run it only on your own machine or an isolated lab network, never on a public server and never exposed to the internet. Break-then-fix is not finished. The lab teaches exploitation on targets you own; it is not a hardened app.

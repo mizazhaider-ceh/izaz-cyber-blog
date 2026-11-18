@@ -1,0 +1,37 @@
+---
+title: "PowerShell Academy"
+slug: "powershell-academy"
+description: "A free public site that teaches PowerShell as a system to understand, in 18 chapters, 61 lessons, 102 commands, and 48 glossary terms."
+category: "PowerShell"
+tags: ["powershell", "nextjs", "typescript", "teaching", "academy"]
+status: "Live"
+repo: "https://github.com/mizazhaider-ceh/powershell-academy"
+draft: false
+featured: true
+---
+
+## Problem
+
+PowerShell is often taught as a list of commands to memorise. I wanted to teach it as a system to understand: PowerShell works with objects, not just text, the pipeline passes those objects from one command to the next, and a few shaping tools answer most everyday questions.
+
+## Approach
+
+A free public learning site in clear, simple English, from the very first command to Active Directory, remoting, Group Policy, and everyday administration tasks. No account, no login, no registration.
+
+The content is structured TypeScript data, 18 chapters and 61 lessons in six stages, plus 102 commands and 48 glossary terms, rendered by a single generic lesson renderer. There is no hand written page file per lesson and no placeholder lessons. Because the content is typed, a missing lesson field or a bad quiz answer index fails the build, not the reader. Search is a client side index built from the same data, so it can never drift from the content.
+
+Every lesson has objectives, a plain English explanation, syntax where it applies, worked examples with copy buttons, common mistakes, and a knowledge check. Every example output is labelled as an illustrative output, never claimed as a live run. Nothing on the site executes PowerShell code.
+
+Live at https://powershell-academy-seven.vercel.app/
+
+## Stack
+
+Next.js 14 App Router, React 18, TypeScript strict, plain CSS design system, dependency free PowerShell tokenizer for syntax highlighting, Vitest plus a Node validation script. No database, no accounts, no server code, no environment variables. The build generates 194 static pages.
+
+## Status
+
+Live. 18 chapters, 61 lessons, 102 commands, 48 glossary terms, 36 chapter quiz questions, 61 lesson knowledge checks, 6 original SVG diagrams.
+
+## Limits
+
+A learning reference, not a lab and not a console. No lab tasks and no exam questions are reproduced. All exercises and quiz questions are original, and lesson text is original writing with technical facts checked against official Microsoft PowerShell documentation.

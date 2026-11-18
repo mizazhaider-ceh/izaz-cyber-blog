@@ -6,8 +6,26 @@ import { TOPICS } from "@/lib/topics";
 import { ArticleRow } from "@/components/ArticleRow";
 
 export const metadata: Metadata = {
-  title: `${site.name} | ${site.brand}`,
+  // Home is the one page where the root layout template is not applied
+  // to the page title, so the full title is set explicitly here.
+  title: {
+    absolute: `${site.name} | ${site.brand}`,
+  },
   description: site.description,
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    url: site.url,
+    title: `${site.name} | ${site.brand}`,
+    description: site.description,
+  },
+  twitter: {
+    card: "summary",
+    title: `${site.name} | ${site.brand}`,
+    description: site.description,
+  },
 };
 
 export default function Home() {

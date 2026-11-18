@@ -7,6 +7,14 @@ import { SearchPageContent } from "@/components/SearchPageContent";
 export const metadata: Metadata = {
   title: "Search",
   description: "Search every article and project on izaz.dev.",
+  alternates: {
+    canonical: "/search",
+  },
+  // Search results pages carry no indexable content of their own.
+  robots: {
+    index: false,
+    follow: true,
+  },
 };
 
 export default function SearchPage() {

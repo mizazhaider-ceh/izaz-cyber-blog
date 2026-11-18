@@ -1,0 +1,96 @@
+---
+title: "Writing my own Android binary XML parser, and the one-line bug that broke it"
+slug: "writing-my-own-android-binary-xml-parser"
+description: "My APK scanner needed to read AndroidManifest.xml without dependencies. My parser passed every test I wrote, then failed on the first real APK. The bug was one wrong base offset."
+date: "2026-10-28"
+category: "Android Security"
+tags: ["android", "apk", "axml", "python", "parser", "debugging"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: true
+---
+
+My APK Security Pipeline reads an Android app package and reports what is wrong with it: a debuggable flag, cleartext traffic, exported components with no permission, secret patterns, risky code. To do any of that, it first has to read `AndroidManifest.xml`.
+
+There is a catch. Inside an APK, the manifest is not text XML. It is binary XML, a compact format called AXML. Most tools shell out to something else to decode it. I did not want a dependency for that, because the whole point of the pipeline is that it runs anywhere Python 3.10 runs, with standard library only. So I wrote my own parser, in `apk_pipeline/axml.py`.
+
+## What binary XML looks like
+
+The format is little endian, and it is made of chunks. Every chunk starts with a type, a header size, and a size. The file starts with a magic number, `0x00080003`, then a string pool chunk that holds every string the file uses, then start element chunks.
+
+A start element chunk, type `0x0102`, holds a namespace reference, a name reference, and then attributes. Each attribute is 20 bytes: namespace reference, name reference, raw value reference, then an 8 byte typed value with a size, a data type, and a data field. The data types I handle are string (`0x03`), int (`0x10`), hex int (`0x11`), and boolean (`0x12`). Anything else falls back to the raw value string.
+
+The parser walks the chunks, decodes the string pool, and builds a plain element tree of dicts: name, attributes, children. The manifest module then reads both binary and plain XML manifests through the same shape, so rules never care which form the input was in.
+
+## The tests were green, and the parser was wrong
+
+I wrote the parser, I wrote a writer in `axml_write.py` to build test fixtures, and the roundtrip tests passed: write a manifest, read it back, same tree. The suite grew, and everything stayed green.
+
+Then I ran the pipeline on a real APK, and the report said package unknown and 0 permissions, while components parsed. That combination made no sense. If the parser could read components, it could read the package name. Something was off by a little, not by a lot.
+
+## The bug: attributeStart is relative, not absolute
+
+The root cause was one line. The start element chunk stores a field called `attributeStart`, and I read attributes from chunk start plus `attributeStart`. That is wrong. The spec defines `attributeStart` relative to the end of the node header, not relative to the chunk start.
+
+Real toolchains store 20 in that field. The node header is 16 bytes: the 8 byte chunk header plus 8 bytes of line and comment fields. So attributes actually begin at chunk start plus 16 plus 20, which is 36.
+
+My own writer stored 36 in that field, because I had written it to match my parser, not the spec. That is why the roundtrip tests stayed green while real APKs parsed garbage attributes. My tests were testing my misunderstanding, not the format. The writer and the parser agreed with each other, and both disagreed with reality.
+
+The fix, in `axml.py`:
+
+```python
+# attributeStart is relative to the end of the node header
+# (chunk header 8 bytes + line/comment 8 bytes = header_size),
+# NOT relative to the chunk start. Real files store 20 here,
+# so attributes begin at chunk start + header_size + 20 = 36.
+base = pos + header_size + attr_start
+for i in range(attr_count):
+    a = base + i * attr_size
+    (_ans, aname_idx, raw_idx) = struct.unpack_from("<III", data, a)
+    value, _ = _parse_typed_value(data, a + 12, strings)
+```
+
+And the writer, in `axml_write.py`, now stores the spec value 20 instead of 36.
+
+## Verifying against ground truth
+
+I did not trust the fix on the strength of my own tests, because my own tests were the thing that had failed me. I verified against androguard as ground truth, on three real APKs. The package names, permission counts, and component counts matched exactly:
+
+| APK | Our package | Truth package | Permissions | Components |
+| --- | --- | --- | --- | --- |
+| Test-debug.apk | org.t0t0.androguard.test | org.t0t0.androguard.test | 0 / 0 | 1 / 1 |
+| TestActivity.apk | tests.androguard | tests.androguard | 0 / 0 | 1 / 1 |
+| TC-debug.apk | org.t0t0.androguard.TC | org.t0t0.androguard.TC | 0 / 0 | 1 / 1 |
+
+I also added 4 regression tests for this exact failure: the spec `attributeStart` value, the UTF-16 pool, resource map skipping, and many root attributes. A test that only roundtrips through my own writer can never catch this class of bug again, because the spec value is now pinned in a test.
+
+## What the pipeline does with the parsed manifest
+
+Once the manifest is structured facts, the rules stay simple. The pipeline checks the debuggable flag, the cleartext flag, the backup flag, exported components, and dangerous permissions, then scans app files for secret patterns and risky code, and scores the result: start at 100, deduct 25 per Critical, 15 per High, 7 per Medium, 3 per Low, floor at 0. Grades run A at 90 and above, B at 75, C at 60, D at 40, F below 40.
+
+You run it like this:
+
+```bash
+python3 -m apk_pipeline scan samples/vulnerable.apk --static-only
+```
+
+```bash
+python3 -m apk_pipeline scan my-test-app.apk --deep --explain
+```
+
+Deep mode unpacks and decompiles with real tools: apktool decode, jadx decompile, androguard dex facts, plus deep links, network config, signing, and native libraries. Exit codes are 0 for clean at your threshold, 2 for findings at or above your threshold, and 1 for an input or scan error with a plain message, never a traceback.
+
+## The lesson I kept
+
+Roundtrip tests prove your writer and your parser agree. They do not prove either one matches the real world. For a parser, the test that matters is a real file made by someone else's toolchain, checked against an independent tool. I learned that on my own code, on a real APK, and the fix was one line. The four regression tests are there so the next person does not have to learn it the same way.
+
+## Limits, stated plainly
+
+Binary manifest parsing covers the common manifest shapes. Very unusual manifests may need a decoded directory input instead. Static patterns are review flags, not proof of exploitability on their own. A real production APK scan and a live Frida run on a real emulator are still the final proof steps, and they are tracked openly in the repo test report. This tool never proves an app is safe. It reports what it found and what it checked. Only run it against apps you built yourself, or apps you have explicit permission to test.
+
+## References
+
+- APK Security Pipeline repository: https://github.com/mizazhaider-ceh/apk-security-pipeline
+- Test report with the full defect record in the repo: `TEST_REPORT.md`
+- The parser: `apk_pipeline/axml.py`, the writer: `apk_pipeline/axml_write.py`
+- Frida guide in the repo: `frida/README.md`

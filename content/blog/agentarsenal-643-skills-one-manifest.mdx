@@ -1,0 +1,90 @@
+---
+title: "AgentArsenal: 643 skills, one manifest"
+slug: "agentarsenal-643-skills-one-manifest"
+description: "How a collection of 353 skills and 290 sub-skills across 29 domains stays installable, versioned, and trustworthy: one manifest drives the installer, the docs, and the marketplace."
+date: "2026-10-27"
+category: "AI Tooling"
+tags: ["agentarsenal", "skills", "agents", "automation", "manifest"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+AgentArsenal is a collection of reusable skills for AI coding agents: procedures an agent can load when it needs to do a specific job well, instead of improvising. The repo holds 353 skills, 290 sub-skills, 36 agents, 25 brains, 15 playbooks, 9 workflows, 47 CLI tools, and 19 supported platforms. Those counts are from 26 October 2026, and the catalog is regenerated from the manifest.
+
+353 top skills plus 290 sub-skills is 643 skill files, across 29 domains. At that size, a folder of markdown files is not a library. It is a pile. The thing that makes it a library is one file: `arsenal-manifest.json`.
+
+## The manifest drives everything
+
+One manifest drives the installer, the docs site, and the Claude Code marketplace integration. Nothing else is the source of truth. The README catalog, the skill count badges, and the marketplace file are all regenerated from it:
+
+```bash
+scripts/derive_manifest.py    # Regenerate arsenal-manifest.json from the repo tree
+scripts/gen_readme_catalog.py # Regenerate the README skill-count badge and catalog from the manifest
+scripts/gen_marketplace.py    # Regenerate .claude-plugin/marketplace.json
+```
+
+If the manifest and the tree disagree, that is a defect, not a difference of opinion. The validator checks manifest consistency as one of its 14 checks, and any failure exits non-zero and fails the build.
+
+## Installing only what you need
+
+The installer is `install.sh`, a sparse installer. It copies chosen skill folders into a platform skills directory, resolving `requires` and `extends` chains from the manifest, and backs up the target before touching it.
+
+```bash
+./install.sh --platform claude-code --all
+```
+
+```bash
+./install.sh --category web
+```
+
+```bash
+./install.sh --version web-sqli@1.0.0
+```
+
+```bash
+./install.sh --dry-run
+```
+
+Run any command with `--dry-run` first to preview exactly what gets copied. Other useful flags: `--list` prints domains with skill counts, `--list-skills` lists available skills with domain and description, `--search <query>` searches by name, domain, or description, `--verify` verifies installed `SKILL.md` files against the manifest sha256 hashes, and `--rollback` restores the most recent backup of the target.
+
+Every skill carries a version, a freshness date, and a lifecycle state. Versions are semver, and a pinned install like `web-sqli@1.0.0` fails on mismatch instead of silently installing something else.
+
+## Two gates keep the bar high
+
+Gate 1 is `scripts/validate.py`, which runs 14 checks over every artifact: required frontmatter fields, name-slug matching the directory, trigger-dense descriptions, semver versions, valid lifecycle values, sane `last_verified` dates, dependency resolution, graph acyclicity, required body headings (Quick Workflow, Edge cases, Key references), sub-skill parent edges, agent, brain, and playbook contracts, manifest consistency, and content hygiene, including no em dashes in content.
+
+Gate 2 is `scripts/score.py`, which grades quality from 0 to 100 on trigger density, command quality, edge cases, and references. Merge needs 85 or higher under CI. The scorer's own built-in gate is 70.
+
+```bash
+python3 scripts/validate.py
+python3 scripts/score.py
+```
+
+The current repo scores, from `scores.json`, cover 704 scored artifacts: 643 skills plus 36 agents plus 25 brains. Skills average 96.1 out of 100, with a minimum of 87. Agents average 99.9 out of 100, with the lowest at 95.
+
+## Sub-skills: big skills that load in pieces
+
+290 drill-down modules live under 124 parent skills, at `skills/<domain>/<skill>/sub/<sub>/SKILL.md`. A sub-skill carries the standard frontmatter plus a `parent:` field and the full body skeleton, so a big skill like `web-sqli` splits into focused modules (`sqli-detection`, `sqli-union-extraction`, `sqli-blind`, `sqli-out-of-band`, `sqli-manual-fallback`, `sqlmap-automation`) that load only when needed.
+
+That split matters because loading is the cost. An agent that loads one giant skill pays for all of it. Sub-skills let it load the one procedure it needs and nothing else.
+
+## Offline bundles, for air-gapped machines
+
+`scripts/bundle.py` packs skills into a single portable archive with a manifest, for air-gapped environments. The MCP server is read-only: it serves the skill catalog from `arsenal-manifest.json` and the `skills/` tree and never modifies skill content.
+
+## What I would not do again
+
+I would not let counts live in prose. The moment a README says "353 skills" as typed text, it starts rotting, because the next skill added does not update the sentence. Every count in this project is generated from the manifest, and the catalog regeneration script exists so the docs can never drift from the tree. The same rule applies to any collection that grows: generate the numbers, do not type them.
+
+## Limits, stated plainly
+
+A skill is a procedure, not a guarantee. Scores measure how well a skill is written, versioned, and checked, not whether the procedure it describes is the right one for your job. Freshness dates and lifecycle states need human review; a passing validator does not mean a skill is current. Install only skills you understand, from a manifest you trust, and preview with `--dry-run` before anything is copied.
+
+## References
+
+- AgentArsenal repository: https://github.com/mizazhaider-ceh/agent-arsenal
+- How it works in the repo: `HOW_IT_WORKS.md`
+- Full command reference in the repo: `COMMANDS.md`
+- Specification in the repo: `SPEC.md`
+- Current scores in the repo: `scores.json`

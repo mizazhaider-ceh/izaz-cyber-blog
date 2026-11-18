@@ -1,0 +1,43 @@
+---
+title: "APK Security Pipeline"
+slug: "apk-security-pipeline"
+description: "One command that security checks an Android app and explains every step it takes. Pure standard library Python, no server, no cloud, no dependencies."
+category: "Android Security"
+tags: ["android", "apk", "python", "static analysis", "frida", "cli"]
+status: "Active, v2.1.0"
+repo: "https://github.com/mizazhaider-ceh/apk-security-pipeline"
+draft: false
+featured: true
+---
+
+## Problem
+
+Most scanners print a wall of warnings and leave you to figure out what matters. I wanted a tool that checks an Android app, explains every step it takes, and is honest about what it skipped and why.
+
+## Approach
+
+Give it an APK from a test app you own. It checks the manifest, the strings, the code patterns, and the runtime behaviour, then hands you one score, one grade, and one report where every finding says what it found, where it found it, why it matters, and how to fix it.
+
+The core idea is parser first, patterns second. I wrote my own binary XML parser (`apk_pipeline/axml.py`) so the manifest becomes structured facts before any rule runs. Rules stay simple and testable. Scoring starts at 100 and deducts 25 per Critical, 15 per High, 7 per Medium, 3 per Low, with a floor at 0. Exit codes are 0 for clean at your threshold, 2 for findings at or above it, and 1 for an input or scan error with a plain message.
+
+Deep mode (`--deep`) unpacks and decompiles with real tools: apktool decode, jadx decompile, androguard dex facts, plus deep links, network config, signing, and native libraries. Four Frida scripts trace network, storage, crypto, and intents at runtime, logging hosts and algorithm names only, never full URLs, tokens, keys, or file contents.
+
+```bash
+python3 -m apk_pipeline scan samples/vulnerable.apk --static-only
+```
+
+```bash
+python3 -m apk_pipeline scan my-test-app.apk --deep --explain
+```
+
+## Stack
+
+Python 3.10 or newer, standard library only, no packages to install. One CLI command, seconds per run, JSON output and baseline compares for CI.
+
+## Status
+
+Active, v2.1.0. 64 tests. Deep mode, auto install setup, per tool result files, and a colorful CLI are done. The binary XML parser bug found on a real APK, a wrong `attributeStart` base offset, is fixed and verified against androguard as ground truth, with regression tests pinning the spec value.
+
+## Limits
+
+Static patterns are review flags, not proof of exploitability on their own. Dynamic results only cover the flows you actually ran. Binary manifest parsing covers the common manifest shapes; very unusual manifests may need a decoded directory input instead. This tool never proves an app is safe. It reports what it found and what it checked. Only run it against apps you built yourself, or apps you have explicit permission to test.

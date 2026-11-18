@@ -1,22 +1,44 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { jsonLdScript, personJsonLd } from "@/lib/jsonld";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "About Me",
   description:
     "About Muhammad Izaz Haider: security researcher, builder, and writer on cybersecurity, AI security, and engineering.",
+  alternates: {
+    canonical: "/about",
+  },
+  openGraph: {
+    type: "profile",
+    url: `${site.url}/about`,
+    title: `About Me | ${site.brand}`,
+    description:
+      "About Muhammad Izaz Haider: security researcher, builder, and writer on cybersecurity, AI security, and engineering.",
+  },
+  twitter: {
+    card: "summary",
+    title: `About Me | ${site.brand}`,
+    description:
+      "About Muhammad Izaz Haider: security researcher, builder, and writer on cybersecurity, AI security, and engineering.",
+  },
 };
 
 export default function About() {
   return (
     <div className="mx-auto max-w-[720px] px-6 py-16 md:py-24">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(personJsonLd()) }}
+      />
       <h1 className="text-center font-display text-5xl font-bold leading-tight text-text-primary md:text-6xl">
         About Me
       </h1>
 
       <figure className="mx-auto mt-12 w-fit text-center">
         <div
+          role="img"
           aria-label="Portrait placeholder"
           className="flex h-48 w-48 items-center justify-center rounded-xl border border-border bg-surface font-display text-5xl font-bold text-text-muted"
         >
@@ -36,8 +58,7 @@ export default function About() {
         <p>
           I hold the <strong className="text-text-primary">CNSP with Merit</strong>. In the CSCB
           2026 competition I placed <strong className="text-text-primary">#1 Web Junior</strong>,{" "}
-          <strong className="text-text-primary">#3 overall Junior</strong>,{" "}
-          <strong className="text-text-primary">#3 Howestian</strong>, and{" "}
+          <strong className="text-text-primary">#3 overall Junior</strong>, and{" "}
           <strong className="text-text-primary">#26 of 806</strong>, earning{" "}
           <strong className="text-text-primary">26 flags</strong>.
         </p>
