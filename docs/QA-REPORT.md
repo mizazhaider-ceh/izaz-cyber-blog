@@ -170,7 +170,7 @@ palette, type, layout, and content are unchanged.
 
 ## 7. Banned-item grep audit
 
-Command: `grep -rInE "—|269/269|16\.40/20|Howest|university|lecturer|professor|stormbreaker|CVE-" src/ content/`
+Command: `grep -rInE $'\u2014|269/269|16\.40/20|Howest|university|lecturer|professor|stormbreaker|CVE-' src/ content/` (the first alternative is the em dash character, written as a Unicode escape so this file contains no literal em dash)
 
 Result: zero hits in `src/` and `content/`. The same pattern over `docs/`
 matches only `docs/PLAN.md` (5 lines), where the plan itself names the banned
