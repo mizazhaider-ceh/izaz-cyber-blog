@@ -24,6 +24,14 @@
   --success: #66800b;
   --warning: #ad8301;
   --research: #5e409d;
+  /* Primary button tokens: text on the button background must reach 4.5:1
+   * in both themes. Light uses warm white on the deep red; dark uses dark
+   * ink on the brighter coral. The hover shades are chosen the same way. */
+  --button-bg: #af3029;
+  --button-text: #fffcf0;
+  --button-bg-hover: #8e2620;
+  --selection-bg: #af3029;
+  --selection-text: #fffcf0;
 }
 
 [data-theme="dark"] {
@@ -42,6 +50,13 @@
   --success: #879a39;
   --warning: #d0a215;
   --research: #9d8bd0;
+  /* Dark button: dark ink on the brighter coral, 5.14:1. Hover is a
+   * lighter coral with the same ink text, 6.10:1. */
+  --button-bg: #de594c;
+  --button-text: #100f0f;
+  --button-bg-hover: #e86b5e;
+  --selection-bg: #de594c;
+  --selection-text: #100f0f;
 }
 
 @theme inline {
@@ -61,6 +76,9 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-research: var(--research);
+  --color-button-bg: var(--button-bg);
+  --color-button-text: var(--button-text);
+  --color-button-bg-hover: var(--button-bg-hover);
   --font-display: var(--font-display);
   --font-sans: var(--font-body);
   --font-mono: var(--font-mono);
@@ -94,8 +112,8 @@
   }
 
   ::selection {
-    background-color: var(--primary);
-    color: #fffcf0;
+    background-color: var(--selection-bg);
+    color: var(--selection-text);
   }
 
   :focus-visible {

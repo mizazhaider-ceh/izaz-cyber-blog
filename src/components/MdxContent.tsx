@@ -34,7 +34,13 @@ function PreBlock({ children }: { children?: ReactNode }) {
     return <pre>{children}</pre>;
   }
   const className = codeElement.props.className ?? "";
-  const language = className.replace(/^language-/, "") || undefined;
+  // rehype-highlight adds its own "hljs" class, so the language token
+  // must be picked out of the class list, not assumed to be first.
+  const language =
+    className
+      .split(/\s+/)
+      .find((token) => token.startsWith("language-"))
+      ?.replace(/^language-/, "") || undefined;
   const code = textFromChildren(codeElement.props.children);
   return (
     <div className="my-8">

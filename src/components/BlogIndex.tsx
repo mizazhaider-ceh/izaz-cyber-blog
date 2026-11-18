@@ -107,7 +107,7 @@ export function BlogIndex({ posts }: BlogIndexProps) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search titles, body, and tags"
-            className="mt-2 w-full rounded-lg border border-border bg-background-pure px-4 py-3 text-base text-text-primary outline-none placeholder:text-text-subtle focus:border-secondary"
+            className="mt-2 w-full rounded-lg border border-border bg-background-pure px-4 py-3 text-base text-text-primary outline-none placeholder:text-text-muted focus:border-secondary"
           />
         </div>
         <div>
@@ -221,7 +221,7 @@ export function BlogIndex({ posts }: BlogIndexProps) {
                   aria-current={pageNumber === currentPage ? "page" : undefined}
                   className={`rounded-full px-4 py-2 font-mono text-sm transition-colors ${
                     pageNumber === currentPage
-                      ? "bg-primary text-[#fffcf0]"
+                      ? "bg-button-bg text-button-text"
                       : "border border-border text-text-primary hover:border-primary hover:text-primary"
                   }`}
                 >

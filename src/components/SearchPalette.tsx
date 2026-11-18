@@ -107,7 +107,7 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
                 aria-activedescendant={
                   results[activeIndex] ? `search-result-${activeIndex}` : undefined
                 }
-                className="w-full bg-transparent text-base text-text-primary outline-none placeholder:text-text-subtle"
+                className="w-full bg-transparent text-base text-text-primary outline-none placeholder:text-text-muted"
               />
               <button
                 type="button"
@@ -166,7 +166,7 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
                 ))}
               </ul>
             )}
-            <p className="border-t border-border px-4 py-2 font-mono text-xs text-text-subtle">
+            <p className="border-t border-border px-4 py-2 font-mono text-xs text-text-muted">
               Arrow keys to move, Enter to open, Escape to close.
             </p>
           </div>

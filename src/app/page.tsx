@@ -53,7 +53,7 @@ export default function Home() {
         <div className="mt-12 flex flex-wrap items-center gap-8">
           <Link
             href="/blog"
-            className="rounded-full bg-primary px-6 py-3 font-display text-base font-bold text-[#fffcf0] transition-colors hover:bg-primary-hover"
+            className="rounded-full bg-button-bg px-6 py-3 font-display text-base font-bold text-button-text transition-colors hover:bg-button-bg-hover"
           >
             Read the writing
           </Link>
