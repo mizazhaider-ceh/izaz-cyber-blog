@@ -1,0 +1,266 @@
+---
+title: "Understanding DevSecOps pipelines"
+slug: "understanding-devsecops-pipelines"
+description: "Where security checks actually belong in a pipeline, what each check catches, and what happens when one fails, with a realistic pipeline as the worked example."
+date: "2026-11-18"
+category: "DevSecOps"
+tags: ["devsecops", "pipeline", "ci", "automation"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+A pipeline is a promise. Code goes in one end, and a tested, reviewed, deployable artifact comes out the other. The promise only holds if every step does what it claims, and security is part of that claim. DevSecOps is the practice of building security checks into the pipeline itself, so that a vulnerability is caught by a machine at the cheapest possible moment, instead of by a person at the most expensive one.
+
+This article explains where the checks belong, what each one catches, what should happen when one fails, and how a realistic pipeline fits together. It is a concept explainer with one worked example. The pipeline in the example is a generic, illustrative shape, not a real company pipeline, and every tool mentioned is named because it is a common, documented choice, not because it is the only choice.
+
+## What DevSecOps actually changes
+
+DevOps changed how software ships. Small changes, merged often, tested automatically, deployed by a pipeline instead of by hand. That speed is the point, and it is also the risk. A manual security review at the end of a release cycle cannot keep up with a team that deploys several times a day. Either security becomes a bottleneck that everyone resents, or it gets skipped, and the team ships fast and blind.
+
+DevSecOps answers that by moving security into the same automation that ships the code. The OWASP DevSecOps Guideline states the goal plainly: detect security issues, whether design flaws or application vulnerabilities, as early and as cheaply as possible, and keep detecting them continuously. Security stops being a phase at the end and becomes a property of the pipeline, checked at every stage where a check can run.
+
+Three ideas carry most of the weight. The first is shift left, which means catching a problem closer to the developer who wrote it, where the fix is a small edit instead of a redesign. The second is automation with a decision attached: a scan that only produces a report nobody reads is decoration, while a scan wired to a gate that blocks a merge is a control. The third is that the pipeline itself needs securing, because a pipeline that can deploy code is a powerful target, and a compromised pipeline can ship a compromised artifact to every user at once.
+
+<Callout type="NOTE">
+A pipeline without gates is a conveyor belt, not a control. Scans are useful, but the security value comes from what the pipeline does with the result: block, warn, or let through, and who is told about it.
+</Callout>
+
+## The stages of a pipeline, and what lives in each
+
+A typical pipeline has the same shape in most teams, even when the tools differ. Code is committed, built, tested, packaged, and deployed. Each stage is a place where a different kind of check fits, because each stage has different evidence available. Source code is available at commit time, a built artifact is available at build time, and a running application is only available at test time. A check placed where its evidence does not exist yet cannot work, and a check placed long after its evidence existed is a check that arrived late.
+
+**Commit and pull request.** This is the earliest stage, and the cheapest place to catch a mistake. Two checks belong here. Secrets scanning looks for credentials, tokens, and private keys accidentally committed to the repository. A secret in a public repository is exposed the moment it is pushed, and a secret in a private repository is exposed to everyone with read access, so catching it before the merge matters. The second check is fast static analysis in the pull request, reporting only the new findings the change introduced, so the developer sees what they just wrote, not a backlog of old warnings.
+
+**Build.** The build stage turns source code into an artifact, and it is where the deeper scans run. SAST, static application security testing, reads the source code without running it, looking for patterns such as injection flaws, unsafe deserialisation, and weak cryptography. SCA, software composition analysis, reads the dependency list and checks every library, including transitive dependencies the developer never chose directly, against databases of known vulnerabilities and malicious packages. Infrastructure as code scanning belongs here too: it reads Terraform, Helm, or Kubernetes manifests and flags misconfigurations such as a storage bucket open to the world or a container running as root.
+
+**Test.** Once the application runs, dynamic checks become possible. DAST, dynamic application security testing, probes the running application from the outside, the way an attacker would, sending requests and watching responses. IAST, interactive application security testing, instruments the running application during its own test suite, so it can see inside while the tests exercise the code. API security testing also belongs here, since an API is only truly testable when it answers requests.
+
+**Release.** Before an artifact is allowed to move toward production, the pipeline should be able to answer three questions: what is inside it, who built it, and has it been tampered with. An SBOM, a software bill of materials, lists every component in the artifact. Artifact signing attests that this exact artifact came from this pipeline. Build provenance records how it was built, which source, which commit, which builder. The SLSA framework gives this a graded structure, so a team can say honestly which level of provenance its builds provide.
+
+**Deploy and operate.** The last checks run where the software actually lives. Admission controllers can refuse to run a container image that is unsigned, unscanned, or built from a disallowed base image. Runtime scanning watches the deployed system for new vulnerabilities in the components it runs, and for behaviour that does not match what the application should do. Monitoring and logging close the loop, because a vulnerability disclosed after deployment still needs to be found, and the pipeline is the fastest way to ship the fix.
+
+## What each check catches, and what it cannot
+
+No single check catches everything, and choosing checks is really choosing which questions to ask at which stage. A useful way to remember the set is to ask what evidence each one reads.
+
+SAST reads source code, so it is good at code-level flaws: a query built by string concatenation, a hard-coded secret, a cryptographic call used wrongly, an unsafe function. It is weak at anything it cannot see from the code alone, such as whether an access control check is actually enforced at runtime, or whether a configuration value in production is safe. It also produces false positives, findings that look like flaws but are not, which is why a good pipeline reports new findings in the pull request, where the author has the context to judge them, rather than failing the whole build on every warning.
+
+SCA reads the dependency tree, so it is good at the question every team forgets to ask: what third-party code are we shipping. A single direct dependency can pull in dozens of transitive ones, and a vulnerability in any of them is a vulnerability in the application. SCA is also the check that catches malicious packages, such as typosquatted names and dependency confusion, where an attacker publishes a package with a name close to a real one. What SCA cannot do is judge whether a vulnerable function in a dependency is actually reachable from the application, so its findings need triage, not blind blocking.
+
+DAST reads behaviour, so it is good at what the running application actually exposes: an unprotected endpoint, a missing security header, an error page that leaks internals, a session that does not expire. It is limited by coverage: it can only test the parts of the application it can reach, and it cannot see code paths that no request exercises. It also needs a running environment, which makes it slower and later than the build-time checks.
+
+Secrets scanning reads text, so it is good at the most preventable class of leak: a credential pasted into code, a token in a configuration file, a private key in a test fixture. Tools such as Gitleaks and TruffleHog recognise known secret formats, and some can verify whether a detected credential is still live, which keeps false positives low. What secrets scanning cannot do is judge intent, so a clearly fake placeholder in documentation can still be flagged, and the team needs an allowlist process for those.
+
+Infrastructure as code scanning reads configuration, so it is good at misconfigurations that no code review would catch, because the code is correct and the deployment is wrong. A firewall rule that is too broad, a database without encryption, a service account with more permissions than it needs. Its weakness is that it only sees the declared configuration, not the drift that happens when someone changes a setting by hand in the console afterwards, which is why runtime checks exist to catch the drift.
+
+<Callout type="TIP">
+When two checks overlap, keep both, but give them different jobs. SAST in the pull request teaches the developer. The same SAST result at the release gate blocks the artifact. One finding, two moments, two different decisions.
+</Callout>
+
+## Security gates: where a check becomes a decision
+
+A security gate is a checkpoint in the pipeline that decides whether code or an artifact is allowed to proceed, to merge, to be released, or to be deployed, based on security criteria. The OWASP DevSecOps Guideline is clear about the hard part: it is not adding gates, it is designing gates that reduce risk without destroying developer flow. A gate that is too noisy or too strict gets disabled, ignored, or bypassed, and then the team has the worst of both worlds, a pipeline that looks secure and is not.
+
+Good gates follow a few principles. Gate on risk, not on raw counts. A build with fifty low-severity findings in old code is not necessarily more dangerous than a build with one critical finding in a new authentication path. Block on severity, exploitability, and reachability, and let the rest be warnings with an owner and a deadline. Gate only on new findings where the old code is concerned. If the codebase already has a hundred known issues, failing every build on all of them punishes the developer who touched one file, and teaches the team that the gate is unfair. Baseline the existing issues, and hold each change accountable only for the risk it introduces. Make the failure message useful. A gate that says "build failed, 3 high findings" sends the developer on a hunt. A gate that says which file, which line, and what the fix looks like, linked from the pull request, gets the fix made.
+
+The table below shows a sensible gate at each stage. The exact thresholds are a team decision, and they should be written down as policy, not left as defaults in a tool.
+
+| Stage | Gate | What fails it | What happens on failure |
+|---|---|---|---|
+| Pre-commit | Secrets scan, advisory | A live credential in the commit | Commit is rejected, developer removes the secret and rotates it |
+| Pull request | SAST, SCA, IaC scan | New high or critical finding | Merge is blocked, finding is shown in the pull request with fix guidance |
+| Build | Full SAST, SCA, container scan | Critical vulnerability in a dependency or image | Build is marked failed, artifact is not published |
+| Release | SBOM, signing, provenance | Unsigned artifact, missing SBOM | Release is blocked, artifact cannot move to staging |
+| Deploy | Admission control, policy check | Image from a disallowed registry, privileged container | Deployment is refused, event is logged |
+| Operate | Runtime scan, monitoring | New critical vulnerability in a running component | Alert is raised, fix is prioritised, pipeline ships the patch |
+
+Notice the pattern: early gates are fast and advisory where the cost of a false positive is a wasted minute, and later gates are strict where the cost of a false negative is a vulnerable system in production. A secret caught pre-commit costs a few seconds. The same secret caught after deployment costs a rotation, an incident review, and a disclosure.
+
+## The worked example: a realistic pipeline
+
+Here is a pipeline for a small web application, built with the tools most teams already use, with a security check at every stage where one fits. It is an illustrative shape, not a copy of any real deployment.
+
+A developer commits code to a feature branch and opens a pull request. A pre-commit hook has already run a secrets scan locally, and the same scan runs again in continuous integration, because a local hook can be skipped. The pull request triggers SAST and SCA, both configured to report only new findings, and an infrastructure as code scan over the deployment manifests in the same repository. The pull request cannot merge while a new high or critical finding is open, and each finding appears as a comment on the exact line, with a short explanation of the fix.
+
+When the pull request merges, the build job runs the full test suite plus a deeper SAST pass, then builds a container image. The image is scanned for known vulnerabilities in its operating system packages and application dependencies. The pipeline generates an SBOM for the image, signs the image, and records the build provenance: the commit, the builder, and the build steps. The signed image is pushed to the registry, and the unsigned, unscanned alternative is never published, so there is no unguarded path to production.
+
+The release job deploys the signed image to a staging environment, where DAST runs against the running application and the API test suite exercises the endpoints. Findings from DAST go to the same tracking system as the build findings, with the same severity rules. Only a staging deployment that passes DAST and the API tests is promoted to production, and the promotion is itself a pipeline step, not a manual copy, so the artifact that was tested is the artifact that ships.
+
+In production, an admission controller checks every deployment against policy: the image must be signed by the pipeline, must come from the approved registry, and must not run as root or with privileged capabilities. A runtime scanner watches the deployed components for newly disclosed vulnerabilities, and the pipeline is ready to ship a patched image through the same stages when one appears.
+
+<Diagram title="A pipeline with security gates" caption="Each stage has a check that fits the evidence available there. A failure blocks that stage, not the whole history, and the fix goes back to the developer through the pull request.">
+<svg viewBox="0 0 720 320" width="100%" role="img" aria-labelledby="understanding-devsecops-pipelines-d1-title understanding-devsecops-pipelines-d1-desc">
+<title id="understanding-devsecops-pipelines-d1-title">Pipeline stages with security gates</title>
+<desc id="understanding-devsecops-pipelines-d1-desc">A seven stage pipeline from commit to DAST, with a failure bar below showing that a failed gate blocks the stage and sends the finding back to the developer.</desc>
+<rect x="12" y="24" width="92" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="58" y="50" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Commit</text>
+<text x="58" y="68" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">secrets scan</text>
+<rect x="116" y="24" width="92" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="162" y="50" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">SAST</text>
+<text x="162" y="68" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">new findings</text>
+<rect x="220" y="24" width="92" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="266" y="50" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">SCA</text>
+<text x="266" y="68" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">dependencies</text>
+<rect x="324" y="24" width="92" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="370" y="50" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Build</text>
+<text x="370" y="68" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">image scan</text>
+<rect x="428" y="24" width="92" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="474" y="50" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Release</text>
+<text x="474" y="68" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">SBOM, sign</text>
+<rect x="532" y="24" width="92" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="578" y="50" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Deploy</text>
+<text x="578" y="68" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">admission</text>
+<rect x="636" y="24" width="72" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="672" y="50" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">DAST</text>
+<text x="672" y="68" textAnchor="middle" fontSize="10" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">staging</text>
+<line x1="104" y1="56" x2="116" y2="56" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#dsp-arrow)" />
+<line x1="208" y1="56" x2="220" y2="56" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#dsp-arrow)" />
+<line x1="312" y1="56" x2="324" y2="56" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#dsp-arrow)" />
+<line x1="416" y1="56" x2="428" y2="56" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#dsp-arrow)" />
+<line x1="520" y1="56" x2="532" y2="56" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#dsp-arrow)" />
+<line x1="624" y1="56" x2="636" y2="56" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#dsp-arrow)" />
+<line x1="162" y1="88" x2="162" y2="180" stroke="var(--primary)" strokeWidth="1.5" strokeDasharray="5,4" />
+<line x1="578" y1="88" x2="578" y2="180" stroke="var(--primary)" strokeWidth="1.5" strokeDasharray="5,4" />
+<rect x="12" y="180" width="696" height="72" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="360" y="208" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">On failure: block the stage</text>
+<text x="360" y="230" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">finding goes to the pull request, fix, then rerun</text>
+<text x="360" y="284" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">No unsigned or unscanned artifact reaches production</text>
+<defs>
+<marker id="dsp-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
+
+A concrete example of a gate in a GitHub Actions workflow shows how little code this takes. The following is an illustrative workflow fragment, not a copy of a real project file:
+
+```yaml
+name: SAST gate
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Semgrep
+        run: semgrep ci --baseline-commit ${{ github.event.pull_request.base.sha }}
+```
+
+Illustrative output:
+
+```text
+Scan completed: 2 new findings, 0 high, 0 critical
+Gate result: PASS, merge allowed
+```
+
+The key detail is the baseline: only findings introduced by this change can fail the gate. A second example, a dependency scan with a threshold, shows the same idea for SCA:
+
+```yaml
+name: Dependency gate
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  sca:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan dependencies
+        run: trivy fs --severity HIGH,CRITICAL --exit-code 1 .
+```
+
+Illustrative output:
+
+```text
+Scan completed: 1 HIGH finding in a transitive dependency
+Gate result: FAIL, merge blocked until the dependency is updated
+```
+
+Both fragments are short on purpose. A gate that needs a hundred lines to understand will not be maintained, and an unmaintained gate is a gate that gets deleted at the first deadline.
+
+## What happens when a gate fails
+
+A failing gate is a normal event in a healthy pipeline, not an emergency. The pipeline should treat it the way a test failure is treated: the change does not proceed, the author is told exactly why, and the fix is a normal part of the work, not a separate security project.
+
+The failure path matters more than the success path, because it is where teams quietly give up. Four behaviours decide whether gates survive contact with real deadlines. First, the failure must be visible where the developer already works, in the pull request, not in a separate dashboard they never open. Second, the message must name the file, the line, and the fix, not just the rule that fired. Third, there must be a legitimate way to handle a finding that cannot be fixed right now: a documented exception with an expiry date and an owner, recorded where the team can see it, not a silent suppression. Fourth, someone must own the backlog. Findings that are warnings today become the next incident if nobody tracks them, so the team needs a regular review of open findings, with severity and age as the sorting keys.
+
+There is also a failure mode that has nothing to do with code: the gate itself breaks. A scanner goes offline, a token expires, a new tool version changes its output format. A pipeline that treats a scanner error as a pass ships unprotected code. A pipeline that treats it as a fail blocks every developer until someone notices. The better design is to fail closed for the release gate and alert loudly, while keeping the pull request gate informative, so a broken scanner is a visible incident, not a silent gap.
+
+<Callout type="WARNING">
+Never silence a gate by deleting it in a hurry. If a gate is blocking real work, the fix is to tune the threshold, baseline the old findings, or fix the scanner, not to remove the check and forget it was ever there.
+</Callout>
+
+## The shift-left feedback loop
+
+The pipeline diagram shows the flow in one direction, but the value of DevSecOps lives in the loop that runs the other way. A finding is reported, a developer fixes it, the pipeline retests, and the fix is confirmed. Each time around the loop, two things improve: the code gets safer, and the developer learns what the scanner is looking for, so the next change has fewer findings.
+
+That loop is why the pull request is the most valuable place for a check. A developer who sees a finding on their own code, with the fix explained, learns the pattern. A developer who hears about a finding weeks later, in a report written by someone else, learns only that security is slow. The loop also needs a memory: findings that keep recurring are a sign that the team needs a shared rule, a code template, or a short training session, not another round of identical fixes.
+
+<Diagram title="The shift-left feedback loop" caption="A finding is useful only when it travels back to the developer fast, with the fix attached. Each loop makes the next change cleaner.">
+<svg viewBox="0 0 720 340" width="100%" role="img" aria-labelledby="understanding-devsecops-pipelines-d2-title understanding-devsecops-pipelines-d2-desc">
+<title id="understanding-devsecops-pipelines-d2-title">Shift-left feedback loop</title>
+<desc id="understanding-devsecops-pipelines-d2-desc">A four step loop from scan finding to triage to fix to retest, with the retest feeding back into the scan.</desc>
+<rect x="24" y="24" width="200" height="72" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="124" y="54" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">1. Scan finds it</text>
+<text x="124" y="74" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">SAST, SCA, DAST</text>
+<rect x="496" y="24" width="200" height="72" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="596" y="54" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">2. Triage in PR</text>
+<text x="596" y="74" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">file, line, fix shown</text>
+<rect x="496" y="220" width="200" height="72" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="596" y="250" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">3. Developer fixes</text>
+<text x="596" y="270" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">small edit, same branch</text>
+<rect x="24" y="220" width="200" height="72" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="124" y="250" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">4. Pipeline retests</text>
+<text x="124" y="270" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">gate passes, merge</text>
+<line x1="224" y1="60" x2="496" y2="60" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#dsp-arrow2)" />
+<rect x="316" y="44" width="88" height="18" fill="var(--background)" />
+<text x="360" y="57" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">report</text>
+<line x1="596" y1="96" x2="596" y2="220" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#dsp-arrow2)" />
+<rect x="616" y="148" width="72" height="18" fill="var(--background)" />
+<text x="652" y="161" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">assign</text>
+<line x1="496" y1="256" x2="224" y2="256" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#dsp-arrow2)" />
+<rect x="316" y="240" width="88" height="18" fill="var(--background)" />
+<text x="360" y="253" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">fix it</text>
+<path d="M 124 220 L 124 140 L 360 140 L 360 96" fill="none" stroke="var(--success)" strokeWidth="1.5" markerEnd="url(#dsp-arrow2)" />
+<rect x="264" y="124" width="112" height="18" fill="var(--background)" />
+<text x="320" y="137" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">loop back, learn</text>
+<text x="360" y="326" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Faster loops mean fewer repeat findings</text>
+<defs>
+<marker id="dsp-arrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
+
+## Securing the pipeline itself
+
+A pipeline is infrastructure with the keys to production, so it deserves the same scrutiny as the application it ships. The OWASP DevSecOps Guideline treats securing the pipeline as a first-class concern, and the controls are mostly familiar ones applied to a new target.
+
+Start with access. The pipeline should run with the least privilege it needs, and its credentials should be short-lived and scoped to one job, not long-lived tokens shared across projects. GitHub Actions documents this directly in its security hardening guide: use the minimal permissions for the workflow token, pin third-party actions to a full commit SHA rather than a floating tag, and treat pull requests from forks as untrusted input. The same principle applies on any CI system: a workflow that can read a secret and print it to a log is a vulnerability, not a convenience.
+
+Next, protect the build. A build that fetches dependencies over an unverified channel, or runs a script from a repository it did not check, can be poisoned before the application code is even read. Pin dependencies, verify checksums where the ecosystem supports them, and keep the build environment reproducible, so the same source always produces the same artifact. Signing and provenance then let anyone downstream verify that the artifact they received is the one the pipeline built.
+
+Finally, watch the pipeline the way the pipeline watches the code. Log who changed a workflow, who approved a deployment, and who overrode a gate. Those events are the audit trail for the most sensitive system in the delivery chain, and they are the first place to look when something ships that should not have.
+
+## Where to start, in order
+
+A team starting from zero does not need every check at once, and trying to add them all in one week is how pipelines get abandoned. The OWASP DevSecOps Guideline suggests a progression, and it matches what actually works in practice.
+
+First, secrets scanning in pre-commit hooks and in CI, plus SCA in CI. Both have low false positive rates, both catch real and common problems, and both are quick to set up. Second, branch protection and SAST in pull requests, gated on new high and critical findings only. Third, infrastructure as code scanning and container scanning, so the deployment is checked as well as the code. Fourth, DAST or IAST against a staging environment, once a test environment exists. Fifth, SBOM generation, artifact signing, and provenance, which turn a tested build into a verifiable one. Each step is useful on its own, and each one makes the next step easier, because the team is already used to reading findings in the pull request.
+
+A small team can run the first two steps with free tools and an afternoon of configuration. The point is not to buy a platform, it is to make the pipeline answer the question, every time, without a human having to remember to ask it.
+
+## What to remember
+
+DevSecOps is not a set of tools. It is the decision that security checks live in the pipeline, with gates that mean something, at the stage where each check has the evidence it needs. Secrets scanning and SAST belong early, where fixes are cheap. SCA and image scanning belong at build time, where the artifact is assembled. DAST belongs where the application runs. SBOM, signing, and provenance belong at release, where trust is established. And the pipeline itself belongs under the same discipline, because a pipeline that ships code is a target worth protecting.
+
+If you remember one sentence from this article, make it this one: a check that cannot block anything is a report, and a gate that blocks everything is a wall. The pipeline worth building sits between the two, blocking real risk and teaching the developer as it does.
+
+## References
+
+- OWASP DevSecOps Guideline, Introduction and Overview: https://owasp.github.io/DevSecOpsGuideline/
+- [OWASP DevSecOps Guideline, Security Gates](https://owasp.github.io/DevSecOpsGuideline/2-Process/2-3-Build/2-3-5-Security-Gates/)
+- GitHub Docs, Security hardening for GitHub Actions: https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions
+- SLSA, Supply-chain Levels for Software Artifacts: https://slsa.dev/
+- NIST, Secure Software Development Framework (SP 800-218): https://csrc.nist.gov/pubs/sp/800/218/final

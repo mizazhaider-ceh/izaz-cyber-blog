@@ -49,6 +49,94 @@ This file records every article and project shipped in Task 2, where each fact c
 - What is real: exactly 90 daily tasks in 10 phases plus the career track (days 91-95); the phase table with day ranges and outcomes as listed in the article; 1 to 2 hours a day; everything free, with a free tier or free alternative named per task; the phase 5 milestone (50 earned flags plus a written writeup); the PenTrix VulnLab as the home lab with 201 challenges across 29 modules; TryHackMe, HackTheBox, picoCTF, and OverTheWire Bandit as named in the README; the rules (go in order, track with checkboxes, build in public from phase 6 onward); the interactive site URL.
 - Left out: the per-day task detail from the phase files was not copied. The article covers the plan at phase level only, because each phase file is a full day-by-day list and reproducing it would duplicate the repo. The career track is summarised, not reproduced.
 
+## Batch 2: 12 new in-depth articles (2026-11-18)
+
+Added 2026-11-18, all dated honestly 2026-11-18, all `featured: false`, all `draft: false`, each 3,500 to 4,800 words with 2 hand-built inline SVG diagrams (24 diagrams total). Total articles now 17. Sources were checked live (HTTP 200) before writing; every illustrative command output is labelled "Illustrative output:" in the article, or framed in prose as a teaching example. No topic needed the Frida fallback. The shared `Diagram` component (`src/components/Diagram.tsx`) was built once in this batch and reused by all 12 articles.
+
+### 6. Understanding HTTP request smuggling
+
+- Slug: `understanding-http-request-smuggling`. Category: Web Security.
+- Sources: RFC 9110 (HTTP semantics), RFC 9112 (HTTP/1.1 message syntax), PortSwigger Web Security Academy request smuggling material.
+- What is real: CL.TE, TE.CL, and TE.TE variants explained from the RFC definitions of Content-Length and chunked Transfer-Encoding; the CL.TE worked example is explicitly framed as a teaching example, not a payload to send anywhere; diagrams show the front-end/back-end desync and the CL.TE walkthrough.
+- Left out: named 2025/2026 desync disclosures and vendor-specific incidents, not verified against a primary source; no real domain used as a target (example.com only).
+
+### 7. Building a practical Linux security lab
+
+- Slug: `building-a-practical-linux-security-lab`. Category: Linux.
+- Sources: Ubuntu and Debian official documentation, GNU man pages.
+- What is real: host-only virtual lab design, snapshot and isolation guidance, service hardening steps from official docs; diagrams show the lab topology and the hardening checklist flow.
+- Left out: no lab step is presented as tested on his machine; the Day 4/5 exercises were trimmed, and the "first week" plan covers Days 1 to 3 only.
+
+### 8. Exploring DNS enumeration
+
+- Slug: `exploring-dns-enumeration`. Category: Network Security.
+- Sources: RFC 1034, RFC 1035, RFC 1918, dig and host man pages.
+- What is real: record types, zone transfer mechanics, and enumeration method from the RFCs and man pages; the example domain used is example.com with its documented address 93.184.216.34; diagrams show the DNS resolution chain and the enumeration workflow.
+- Left out: no real domain was enumerated; no live query output is presented as his own run.
+
+### 9. An introduction to LLM prompt injection
+
+- Slug: `an-introduction-to-llm-prompt-injection`. Category: AI Security.
+- Sources: OWASP GenAI pages and cheat sheets, MITRE ATLAS (home page and data repository).
+- What is real: direct and indirect injection, the "everything in the context window is text" model, and defences from OWASP guidance; diagrams show where injected instructions enter and the defence layers.
+- Left out: the EchoLeak case was left out (not verified against a primary source); the ATLAS deep link for AML.T0051 returns 404, so it is not cited, the technique ID is named in text from verified search results and the ATLAS repo only; the OWASP LLM Top 10 project page returns 404, only genai.owasp.org pages are cited.
+
+### 10. Analyzing insecure authentication
+
+- Slug: `analyzing-insecure-authentication`. Category: Web Security.
+- Sources: OWASP Authentication Cheat Sheet, OWASP Session Management Cheat Sheet.
+- What is real: credential stuffing, weak session handling, and MFA gaps explained from OWASP guidance; the Microsoft 99.9% MFA figure is included only as OWASP's attributed citation of Microsoft analysis, not as his own finding.
+- Left out: no real login system was tested; all outputs are labelled illustrative.
+
+### 11. Understanding Linux firewall rules
+
+- Slug: `understanding-linux-firewall-rules`. Category: Linux.
+- Sources: nftables wiki, Netfilter man pages, iptables documentation.
+- What is real: nftables rule structure, chains, tables, and default-deny design from the official docs; diagrams show packet flow through the chains and a default-deny policy layout.
+- Left out: the nft man page at man7.org returns 404, so the Netfilter man page is cited instead; no live firewall was configured as part of the article.
+
+### 12. Building network reconnaissance automation
+
+- Slug: `building-network-reconnaissance-automation`. Category: Network Security.
+- Sources: Nmap Reference Guide (nmap.org/book/man.html), nmap.org, RFC 1918.
+- What is real: port states, `-sS`, `-sT`, `-sV`, `-sC`, `-sn`, `-oA`, NSE categories, and `scanme.nmap.org`, all taken from the Nmap man page; diagrams show the scan pipeline and the output parsing flow.
+- Left out: Nmap timing templates (`T0` to `T5`) were cut to stay in the word budget; the article uses the default timing instead.
+
+### 13. Exploring reverse engineering fundamentals
+
+- Slug: `exploring-reverse-engineering-fundamentals`. Category: Reverse Engineering.
+- Sources: Ghidra site and repository, ELF man page (man7.org), PE format specification (Microsoft Learn).
+- What is real: ELF and PE structure, static triage method, and the AXML offset bug told in prose, grounded in his real pipeline work (`apk_pipeline/axml.py`, verified against androguard) and the existing AXML article; diagrams show the ELF layout and the triage workflow.
+- Left out: a Python code snippet for the AXML fix was not included, the fix is already documented with code in the existing AXML article; two long Reference URLs were converted to short display-text links because the bare URLs overflowed mobile by 32px.
+
+### 14. Documenting a CTF investigation, CSCB 2026
+
+- Slug: `documenting-a-ctf-investigation-cscb-2026`. Category: CTFs.
+- Sources: none. The References section states this explicitly; the only facts are his own verified results.
+- What is real: his verified results only, #1 Web Junior, #3 overall Junior, #26 of 806, 26 flags earned, stated once and repeated consistently; the rest of the article is method (preparation, the enumerate-hypothesize-test-document loop, note-taking, time management) and reflection. The results diagram shows only those four numbers.
+- Left out: no challenge names, no challenge details, no flag values, no scores beyond the four verified results, no round dates, no team details, no illustrative outputs by design.
+
+### 15. Understanding DevSecOps pipelines
+
+- Slug: `understanding-devsecops-pipelines`. Category: DevSecOps.
+- Sources: OWASP DevSecOps Guideline, GitHub Actions hardening docs, SLSA, NIST SP 800-218 (SSDF).
+- What is real: pipeline stages, secret handling, dependency scanning, and provenance from the cited guidance; diagrams show the pipeline stages and the trust boundaries.
+- Left out: no real pipeline of his was presented as the example; all outputs are labelled illustrative.
+
+### 16. Practical API security testing
+
+- Slug: `practical-api-security-testing`. Category: Web Security.
+- Sources: OWASP API Security Top 10 2023, PortSwigger API testing material.
+- What is real: the BOLA section is grounded in his real lab work (Flask notes API: detail endpoint with no ownership check versus update/delete with a 403 ownership check, owner-filtered list); diagrams show the API attack surface and the BOLA test flow.
+- Left out: no real API was tested for the article; request/response examples are labelled illustrative.
+
+### 17. Security considerations in AI-powered applications
+
+- Slug: `security-considerations-in-ai-powered-applications`. Category: AI Security.
+- Sources: OWASP LLM Top 10 2025, OWASP LLM Prompt Injection Prevention Cheat Sheet, MITRE ATLAS, NIST AI Risk Management Framework.
+- What is real: the OWASP LLM Top 10 2025 list, prompt injection defences, and AI-specific data handling risks from the cited sources; diagrams show the AI application data flow and the control layers.
+- Left out: two bare-URL References overflowed mobile (422px and 11px) and were converted to short-label markdown links; the ATLAS homepage failed in browser.open but returned 200 via curl, so it is cited; diagram D1 had 3 diagonal connectors, replaced with orthogonal elbows.
+
 ## Projects
 
 One MDX file per real repo in `content/projects/`, each with problem, approach, stack, status, repo link, and honest limits. Frontmatter: title, slug, description, category, tags, status, repo URL, draft false, featured flag.
@@ -80,3 +168,10 @@ Repo URLs follow the `github.com/mizazhaider-ceh/<repo>` pattern shown in the RE
 ## Audit
 
 A grep audit was run over `content/` and `src/lib/content.ts` for the banned items listed in `docs/PLAN.md` (em dash character, the banned figure pair, the GPA figure, institution and staff names, the wrong email local part, and vulnerability identifier prefixes). Result: zero hits. The full audit output is reported back to the parent agent with the Task 2 handover. Note: gray-matter was not installed in this workspace at the time of writing (the scaffold agent owns `package.json` and dependencies), so frontmatter was verified with a dependency-free parser script instead, and the pages agent owns the full `npm run build` check.
+
+## Batch 2 audit (2026-11-18)
+
+- Banned-item grep over all 12 new articles (em dash, Howest, university, lecturer, professor, stormbreaker, CVE-, 269/269, 16.40/20): zero hits. The only "magic" matches are the technical terms ELF magic bytes and AXML magic number.
+- Unslop pass: no hype or filler words found (supercharge, seamless, unlock, revolutionize, game-changing, delve, tapestry, ever-evolving, embark, leverage, moreover, furthermore, "it is important to note" all absent). Each article has 9 to 13 H2 sections, 3 to 4 callouts, 2 diagrams, and code blocks where the topic needs them.
+- Verification: `npm run build` clean, `npx tsc --noEmit` clean, 32 static routes (20 plus 12 new). Playwright on home, blog index, and 9 new articles at 1440px and 390px: 0 console errors, 0px overflow, diagrams rendered and viewed, copy buttons present. Dark mode spot-checked on the CSCB article via the site's localStorage theme key.
+- Left out of Batch 2 as a whole: named 2025/2026 desync disclosures and vendor-specific incidents (not verified against a primary source), the EchoLeak case, and Nmap timing templates T0 to T5 (word budget). No topic needed the Frida fallback.

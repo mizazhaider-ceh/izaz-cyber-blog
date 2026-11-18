@@ -1,0 +1,264 @@
+---
+title: "Practical API security testing"
+slug: "practical-api-security-testing"
+description: "How to test an API properly, from discovery to authentication and authorisation to input handling to business logic, with a method you can repeat on any API."
+date: "2026-11-18"
+category: "Web Security"
+tags: ["api", "testing", "web-security", "owasp"]
+author: "Muhammad Izaz Haider"
+draft: false
+featured: false
+---
+
+Most modern applications are APIs with a user interface attached. The web page is a thin client, the mobile app is a thin client, and the real logic lives behind HTTP endpoints. That is good news for testers, because an API is a smaller, cleaner surface than a whole web application, and it is bad news for the same reason: every flaw in the API is reachable by anyone who can send a request, with no browser, no clicks, and no interface in the way.
+
+This article explains how to test an API properly, in an order you can repeat: discovery, authentication, authorisation, input handling, business logic, and reporting. It is grounded in the OWASP API Security Top 10, the 2023 edition, which is the shared vocabulary for API risk, and in the patterns I have seen while building and testing lab APIs of my own. All examples use a local lab API or clearly illustrative endpoints. Never test an API you do not own or do not have explicit written permission to test.
+
+## Why APIs break differently from websites
+
+A web application hides much of its logic behind pages, forms, and buttons. An API exposes it directly. Each endpoint is a function call over HTTP, with parameters in the URL, headers, and body, and the response is structured data, usually JSON. That structure makes APIs easier to test systematically, because you can list the endpoints, send requests with a script, and compare responses field by field.
+
+It also makes three failure classes more common than they are in traditional web apps. The first is broken authorisation. A web page hides a button from a user who should not see it, and the tester may never notice that the endpoint behind the button has no check of its own. The API has no button to hide behind, so the check must live in the endpoint, and when it does not, changing an ID in a request is enough to reach someone else's data. The OWASP API Security Top 10 puts this first for a reason: broken object level authorisation is the most common serious API flaw, and it is also the easiest to test.
+
+The second is excessive data exposure. An API often returns a full object from the database, trusting the client to display only the fields it should. A mobile app shows the username and the public profile, but the response also contains the email address, the internal role, and the account status. The client ignores them, the attacker does not.
+
+The third is missing limits. An API endpoint that sends a message, creates an account, or runs a search is a function the attacker can call ten thousand times a minute. Without rate limits, size limits, and cost limits, a legitimate flow becomes a denial of service, or a bill, with no vulnerability in the traditional sense at all.
+
+<Callout type="NOTE">
+An API test is not a scan. Automated scanners can find missing headers and known patterns, but authorisation and business logic flaws are decisions, not patterns, and only a tester who understands what the API is supposed to do can judge whether a response is wrong.
+</Callout>
+
+## The method, in six steps
+
+The method below is the spine of the article. Every later section is one step of it, in order, with the tests that belong there.
+
+1. **Discover.** Map the API surface: endpoints, methods, parameters, authentication scheme, and data model. No testing starts before the map is finished.
+2. **Authenticate.** Test how identity is established: login, tokens, keys, password reset, and session handling.
+3. **Authorise.** Test whether an authenticated user can only do what their role allows, at the object, property, and function levels.
+4. **Fuzz inputs.** Test how the API handles unexpected, malformed, and hostile input, including injection and mass assignment.
+5. **Test business logic.** Test whether the API enforces the rules of the business it serves, such as quantity limits, workflow order, and state transitions.
+6. **Report.** Record every finding with the request, the response, and the impact, so the fix can be verified by repeating the same request.
+
+The order matters. Authorisation tests need authenticated accounts at two privilege levels, and input tests need to know which fields exist, so discovery comes first. Business logic tests need to know what the correct behaviour is, so they come after the mechanical tests, when the tester already understands the API.
+
+## Step 1: discover the API
+
+Discovery is reconnaissance on a system you own, and it has the same goal as any recon: build a complete map before you start poking. An incomplete map means untested endpoints, and untested endpoints are where the findings hide.
+
+Start with the documentation, if it exists. An OpenAPI or Swagger specification lists the endpoints, the methods, the parameters, and the response shapes, and it is the fastest route to a complete map. Read it, but do not trust it completely: documentation describes the intended API, and the real API often has extra endpoints, extra parameters, and older versions that the documentation forgot. Check the API version history, and test version 1 as well as version 2, because old versions are frequently left running with old, weaker checks.
+
+Next, watch the API in use. Run the real client, a web front end or a mobile app, against your lab instance, and capture the traffic with a proxy such as Burp Suite or OWASP ZAP. Every request the client makes is an endpoint that exists, and the parameters it sends tell you the data model. Look for requests the documentation did not mention: admin calls made by the front end, debug endpoints, internal endpoints the client uses for its own bookkeeping.
+
+Then enumerate. Try the predictable endpoints: `/api/users`, `/api/admin`, `/api/health`, `/api/debug`, and the same paths under `/api/v1` and `/api/v2`. Look at error messages, because a 404 that says "route not found" and a 405 that says "method not allowed" tell you different things: the second one confirms the route exists. Look at the response headers, which often name the framework, the version, and the authentication scheme. None of this is an attack by itself. It is mapping, and a tester who maps well tests well.
+
+A useful discovery checklist for a lab API:
+
+- Every endpoint, method, and path parameter, in a table you can tick off
+- The authentication scheme for each endpoint, including which ones claim to need no authentication
+- The fields in every request and response, including fields the client never displays
+- The API versions in service, and whether old versions are still reachable
+- Error responses: what a 400, 401, 403, and 404 look like, and whether they leak internals
+
+<Callout type="TIP">
+Keep a request collection as you discover. A saved collection in a proxy or an HTTP client is the test suite for every later step, and it is also the evidence for the report. A finding without a saved request is a story, not a result.
+</Callout>
+
+## Step 2: test authentication
+
+Authentication answers the question "who are you", and the tests here check whether the API lets someone answer that question dishonestly, or avoids answering it at all.
+
+Start with the login endpoint. Send wrong passwords repeatedly and watch for a lockout, a delay, or a captcha. An endpoint with no limit on attempts can be brute forced, and a login that returns "user not found" for one input and "wrong password" for another leaks which accounts exist. Send the same credentials with different capitalisation, with trailing spaces, and with empty fields, and watch whether the API treats any of those as valid. Check the password reset flow end to end: can a reset token be requested for any account, does it expire, can it be used twice, and can it be guessed from its format.
+
+Then test the token. Most APIs use a bearer token, often a JSON Web Token, sent in the `Authorization` header. Decode it and read the claims: what identity does it carry, what expiry, what role. Then test the edges: a token with no signature, a token signed with the wrong key, a token with the algorithm changed, an expired token, a token for a deleted user, a token sent to the wrong endpoint. Each of these should be rejected, and each rejection should be the same generic 401, not a detailed error that explains which part failed.
+
+Test what happens without a token, with a token for the wrong audience, and with a token copied from one user to another request. Test logout and revocation: if a token is revoked, does the API actually stop accepting it, or does it keep working until it expires. Many APIs never revoke tokens at all, which is a design decision the team should have made deliberately, not by accident.
+
+An illustrative login request against a local lab API looks like this:
+
+```http
+POST /api/v1/auth/login HTTP/1.1
+Host: 127.0.0.1:5000
+Content-Type: application/json
+
+{"email": "alice@example.test", "password": "REDACTED"}
+```
+
+Illustrative output:
+
+```json
+{
+  "token": "REDACTED",
+  "expires_in": 3600,
+  "user": {"id": 7, "role": "user"}
+}
+```
+
+The token value is shown as REDACTED here, and it should be in any report too. A real token in a report is a credential leak in a document, and it has the same effect as the flaw it describes.
+
+## Step 3: test authorisation, three levels deep
+
+Authorisation answers the question "are you allowed to do this", and the OWASP API Security Top 10 splits it into three levels, because an API can pass one and fail another.
+
+**Object level, API1:2023.** Broken object level authorisation, usually called BOLA, is the classic API flaw. The API checks that you are logged in, but not that the object you asked for belongs to you. The test is simple: create two accounts, Alice and Bob, each with their own notes, orders, or files. Log in as Alice, take the ID of one of her objects, and then request Bob's object by changing the ID. If the API returns Bob's object, the check is missing.
+
+This is where my own lab work made the pattern concrete. In a deliberately vulnerable notes application I built with a Flask API, the detail endpoint returned any note by ID with no ownership check at all, while the update and delete endpoints on the same resource did check ownership and returned a 403 for another user's note. The list endpoint only returned the caller's own notes, so the application looked correct from the interface, and only the direct request revealed the gap. That contrast is the lesson: a list that filters correctly does not prove the detail endpoint checks, and each endpoint needs its own test, with its own request, in both directions.
+
+```http
+GET /api/v1/notes/12 HTTP/1.1
+Host: 127.0.0.1:5000
+Authorization: Bearer REDACTED
+```
+
+Illustrative output, for a request made with Alice's token for Bob's note:
+
+```json
+{"id": 12, "owner": "bob", "title": "Private note", "body": "Not yours to read."}
+```
+
+A correct API returns 403 or 404 for that request. Which one is a design choice: 403 confirms the object exists, 404 does not, and many teams prefer 404 for private objects. Either is acceptable, and returning the object is not.
+
+**Property level, API3:2023.** Broken object property level authorisation is the field-level version of the same flaw. The API returns fields the caller should not see, or accepts fields the caller should not set. The test has two halves. First, compare the response fields for a regular user and an administrator, and for the owner and a stranger, and list every field that differs, or that should differ and does not. Second, try mass assignment: send an update request with an extra field, such as `"role": "admin"` or `"is_verified": true`, and see whether the API applies it. If it does, the caller can escalate their own privilege with a single request.
+
+**Function level, API5:2023.** Broken function level authorisation is the endpoint-level version. The API has an administrative function, such as deleting a user or changing a setting, and a regular user can call it. The test is to call every administrative endpoint with a regular user's token, and to try every HTTP method on each endpoint, because an endpoint that checks authorisation on GET may not check it on DELETE. Also test the predictable admin paths, since an endpoint that is not linked in the interface is still an endpoint.
+
+<Diagram title="Where to test an API" caption="The gateway, the services, and the data layer each have test points. Authorisation is tested at the service, not at the client, because the client can be bypassed.">
+<svg viewBox="0 0 720 360" width="100%" role="img" aria-labelledby="practical-api-security-testing-d1-title practical-api-security-testing-d1-desc">
+<title id="practical-api-security-testing-d1-title">API architecture with test points</title>
+<desc id="practical-api-security-testing-d1-desc">An architecture diagram from client through gateway to authentication and notes services and a database, with four test points marked.</desc>
+<rect x="24" y="140" width="140" height="72" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="94" y="168" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Client</text>
+<text x="94" y="188" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">lab app, 127.0.0.1</text>
+<rect x="220" y="140" width="140" height="72" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="290" y="168" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">API gateway</text>
+<text x="290" y="188" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">routing, limits</text>
+<rect x="416" y="56" width="160" height="72" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="496" y="84" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Auth service</text>
+<text x="496" y="104" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">login, tokens</text>
+<rect x="416" y="212" width="160" height="72" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="496" y="240" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Notes service</text>
+<text x="496" y="260" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">BOLA lives here</text>
+<rect x="620" y="212" width="76" height="72" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="658" y="240" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">DB</text>
+<text x="658" y="260" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">notes</text>
+<line x1="164" y1="176" x2="220" y2="176" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#api-arrow)" />
+<path d="M 360 176 L 388 176 L 388 92 L 416 92" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#api-arrow)" />
+<path d="M 360 176 L 388 176 L 388 248 L 416 248" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#api-arrow)" />
+<line x1="576" y1="248" x2="620" y2="248" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#api-arrow)" />
+<text x="192" y="160" textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-mono), monospace">T1</text>
+<text x="404" y="76" textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-mono), monospace">T2</text>
+<text x="404" y="232" textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-mono), monospace">T3</text>
+<text x="598" y="232" textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-mono), monospace">T4</text>
+<text x="360" y="330" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">T1 auth, T2 tokens, T3 authorisation, T4 data exposure</text>
+<defs>
+<marker id="api-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
+
+## Step 4: fuzz inputs and test injection
+
+Once authorisation is understood, the next step is to test what the API does with input it did not expect. The goal is not to break the API for fun. It is to find the places where untrusted input reaches a sensitive operation without validation.
+
+Start with the basics: a very long string, an empty string, a number where a string is expected, a string where a number is expected, a negative number, a zero, a null, and a missing field. Watch the responses. A 400 with a clear validation message is good. A 500 with a stack trace is a finding in itself, because it leaks internals, and it often means the input reached somewhere it was not supposed to. A 200 that silently accepts the nonsense is also a finding, because the nonsense is now stored, and it will be returned to the next reader.
+
+Then test injection, in the places where input becomes a query or a command. A classic SQL injection probe in a search field, an operating system command in a filename, a template expression in a name field. In a lab API, these probes are safe to run, because the data is yours and the damage is contained. The point is to learn whether the API parameterises its queries and validates its inputs, not to extract data. If a probe changes the response in a way that suggests the input was executed, stop, record the request and the response, and report it. Do not keep going to prove how much you can extract.
+
+Test the API's handling of content types and encodings too. Send JSON to an endpoint that expects form data, send an array where an object is expected, send duplicate fields with different values, and send a request with two content type headers. APIs that parse input loosely often have two parsers that disagree, and the disagreement is where the flaw lives. This is the same lesson as request smuggling, one level up: when two components read the same input differently, the attacker chooses the reading that suits them.
+
+Finally, test the limits that belong to API4:2023, unrestricted resource consumption. Send a request with a huge page size, such as `?limit=1000000`, and see whether the API honours it. Upload a large file and see whether there is a size cap. Call an endpoint that triggers a paid third-party service, such as sending a message, and see whether there is a limit per account. These are not injection flaws, but they are API flaws, and they are often found by the same tester, in the same session, with the same habit of asking "what happens if I send more".
+
+<Callout type="WARNING">
+Fuzzing a production API without permission is not testing, it is abuse. Run every input test against a local lab instance or a staging environment you own, with data you can throw away, and keep the request rate low enough that you do not become the denial of service you are testing for.
+</Callout>
+
+## Step 5: test business logic
+
+Business logic flaws are the hardest to find and the most rewarding, because no scanner looks for them. They are flaws in the rules of the application itself: the sequence of steps a user must follow, the limits on what a user may do, and the states an object may be in.
+
+Start by writing down the rules, in plain language, before you test them. A purchase has a quantity, a price, and a payment step, and the payment must happen before the order is confirmed. A booking has a date, and a past date is not bookable. A password reset has a token, and the token must be used once, by the account it was issued for, before it expires. Then test each rule by violating it, one at a time: order a negative quantity, skip the payment step and call the confirm endpoint directly, book a date in the past, reuse a reset token, call the steps out of order.
+
+Test the state machine too. An object moves through states, such as draft, submitted, approved, and paid, and not every transition is allowed. Try to move an order from draft straight to paid, try to approve your own submission, try to cancel an order that is already shipped. Each of these is a request the interface would never send, because the interface only shows the buttons that make sense, but the API accepts any request, and the check must live in the API.
+
+Test the race conditions that only an API makes easy. Send two requests at the same time that both spend the same balance, both claim the same limited item, or both use the same single-use coupon. A web interface makes this hard, because a human clicks once. An API makes it trivial, because a script can send both requests in the same millisecond. Whether the API handles that correctly depends on transactions and locking in the back end, and the test is the only way to find out.
+
+This is also where API6:2023, unrestricted access to sensitive business flows, belongs. The flow itself is legitimate, such as creating accounts, booking tickets, or claiming a promotion, but nothing stops an attacker from automating it thousands of times. Test whether the flow has a limit, a verification step, or a cost that makes automation unprofitable. A flow with no friction is a flow that will be automated, and the tester should say so before someone else discovers it.
+
+## Step 6: report so the fix can be verified
+
+A test without a report is a hobby. A report that cannot be repeated is a rumour. Every finding in the report needs the same four pieces: the endpoint and the method, the exact request that triggered it, the exact response that proved it, and the impact in plain language.
+
+Write the impact as a sentence about what an attacker can do, not as a severity label alone. "A regular user can read any other user's note by changing the ID in the URL" is a finding. "High severity" is a label. The label matters for prioritisation, but the sentence is what gets the fix made, because it tells the developer exactly what to check.
+
+Include the requests that passed, too. A report that lists only failures leaves the team wondering whether the tester checked the rest. A short table of endpoints tested, with the result for each, turns the report into a record of coverage, and it makes the next test faster, because the next tester starts from your map instead of rebuilding it.
+
+And include the remediation as a direction, not as a finished patch. For BOLA, the direction is to check ownership on every endpoint that takes an object ID, in the service layer, not in the client. For mass assignment, it is to allowlist the fields a caller may set, and to reject the rest. For missing rate limits, it is to set limits per account and per endpoint, with a cost-based limit where the endpoint spends money. The developer owns the code, and the tester owns the evidence. Keeping those roles clear is what makes the report trusted.
+
+<Diagram title="The testing methodology" caption="Six steps, in order, with the map from discovery feeding every later step. A finding at any step goes into the report with its request and response.">
+<svg viewBox="0 0 720 460" width="100%" role="img" aria-labelledby="practical-api-security-testing-d2-title practical-api-security-testing-d2-desc">
+<title id="practical-api-security-testing-d2-title">API testing methodology flowchart</title>
+<desc id="practical-api-security-testing-d2-desc">A six step vertical flowchart from discovery through authentication, authorisation, input fuzzing, and business logic to reporting.</desc>
+<rect x="180" y="16" width="360" height="52" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="360" y="38" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">1. Discover the API</text>
+<text x="360" y="56" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">docs, proxy traffic, enumeration</text>
+<rect x="180" y="88" width="360" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="110" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">2. Authenticate</text>
+<text x="360" y="128" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">login, tokens, reset, expiry</text>
+<rect x="180" y="160" width="360" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="182" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">3. Authorise</text>
+<text x="360" y="200" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">object, property, function level</text>
+<rect x="180" y="232" width="360" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="254" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">4. Fuzz inputs</text>
+<text x="360" y="272" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">injection, limits, malformed data</text>
+<rect x="180" y="304" width="360" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="326" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">5. Test business logic</text>
+<text x="360" y="344" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">workflow order, state, races</text>
+<rect x="180" y="376" width="360" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="398" textAnchor="middle" fontSize="14" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">6. Report</text>
+<text x="360" y="416" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">request, response, impact, fix direction</text>
+<line x1="360" y1="68" x2="360" y2="88" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#api-arrow2)" />
+<line x1="360" y1="140" x2="360" y2="160" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#api-arrow2)" />
+<line x1="360" y1="212" x2="360" y2="232" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#api-arrow2)" />
+<line x1="360" y1="284" x2="360" y2="304" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#api-arrow2)" />
+<line x1="360" y1="356" x2="360" y2="376" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#api-arrow2)" />
+<defs>
+<marker id="api-arrow2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
+
+## The OWASP API Security Top 10 as a checklist
+
+The ten risks from the 2023 edition, in order, make a good checklist to run against any API. The first three are authorisation, and they deserve the most time. The rest are the checks that surround them.
+
+| ID | Risk | The one test that matters most |
+|---|---|---|
+| API1:2023 | Broken Object Level Authorization | Request another user's object with your token |
+| API2:2023 | Broken Authentication | Test login limits, token validation, and reset flow |
+| API3:2023 | Broken Object Property Level Authorization | Compare response fields by role, and try mass assignment |
+| API4:2023 | Unrestricted Resource Consumption | Send bursts, huge page sizes, and large uploads |
+| API5:2023 | Broken Function Level Authorization | Call admin endpoints with a regular token, in every method |
+| API6:2023 | Unrestricted Access to Sensitive Business Flows | Automate a legitimate flow and see if anything stops you |
+| API7:2023 | Server Side Request Forgery | Submit internal and metadata URLs to every URL parameter |
+| API8:2023 | Security Misconfiguration | Read headers, error messages, and CORS policy for leaks |
+| API9:2023 | Improper Inventory Management | Test old versions, debug endpoints, and forgotten routes |
+| API10:2023 | Unsafe Consumption of APIs | Feed hostile responses from a mocked upstream service |
+
+Two entries deserve a note. API7, server side request forgery, is tested by giving the API a URL and watching what it fetches: a URL pointing at an internal service, or at the cloud metadata address, should be rejected, and a URL that returns a redirect should not be followed blindly. API9, improper inventory management, is the discovery step turned into a risk: an API with old versions, undocumented endpoints, and forgotten debug routes has a larger attack surface than its documentation claims, and the test is simply to find the parts the team forgot.
+
+## Tools that help, and what they do not do
+
+A proxy is the core tool. Burp Suite and OWASP ZAP both intercept requests, let you modify and replay them, and keep a history you can search. ZAP is free and open source, and its API scanning features cover much of the mechanical work. Burp Suite has a free community edition and a paid professional edition with a scanner. Either one is enough for the method in this article, because the method is manual by design: the tool carries the requests, the tester carries the judgement.
+
+A few supporting tools make the work faster. An HTTP client such as curl or a saved request collection lets you repeat a request exactly, which is what verification needs. A JSON comparison tool, or simply two terminal windows side by side, makes the property-level test easy: the same request as two users, the responses compared field by field. A fuzzer can generate the malformed inputs for step four, but the tester still needs to read the responses, because a fuzzer reports differences, not meaning.
+
+What no tool does is understand the business. No scanner knows that a booking in the past is wrong, that a payment must come before confirmation, or that a regular user should not approve their own request. That understanding is the tester's job, and it is the reason API testing stays a manual discipline even as the tooling improves.
+
+## What to remember
+
+Test an API in order: discover the surface, test authentication, test authorisation at three levels, fuzz the inputs, test the business logic, and report with evidence. Spend the most time on authorisation, because that is where the most serious API flaws live, and test every endpoint on its own, because a correct list endpoint says nothing about the detail endpoint next to it. Keep the request collection, keep the responses, and write the impact as a sentence about what an attacker can do. An API is a contract written in HTTP, and testing it means reading that contract the way an attacker would: literally, endpoint by endpoint, with no assumption that the interface tells the whole story.
+
+## References
+
+- OWASP API Security Top 10, 2023 edition: https://owasp.org/API-Security/editions/2023/en/0x00-header/
+- OWASP API Security Project: https://owasp.org/www-project-api-security/
+- PortSwigger Web Security Academy, API testing: https://portswigger.net/web-security/api-testing
