@@ -132,6 +132,7 @@
     color: #e8e6df;
     border-radius: 12px;
     overflow-x: auto;
+    max-width: 100%;
   }
 
   pre code {
@@ -151,6 +152,7 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     padding: 0 4px;
+    overflow-wrap: anywhere;
   }
 }
 
