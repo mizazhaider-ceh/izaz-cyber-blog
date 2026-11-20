@@ -1,0 +1,137 @@
+<!doctype html>
+<!--
+  izaz.dev OG card template (1200 x 630).
+  One template for every article card plus the default site card.
+  Placeholders: {{TITLE}} {{CATEGORY}} {{SUBTITLE}} {{TITLE_SIZE}}
+  Regenerate with Playwright (static file:// screenshot, no server):
+  render this file at a 1200x630 viewport and screenshot to
+  public/og/<slug>.png (or public/og/default.png for the site card).
+  Fonts are the blog's own: Space Grotesk for the title and brand mark,
+  JetBrains Mono for the category and footer. Point the @font-face URLs
+  at local woff2 files when rendering; the PNG output embeds the glyphs,
+  so no font files ship with the site.
+  Design: warm paper #FFFCF0, ink #201B16, red #AF3029, one red rule and
+  one red category pill, nothing else. No gradients, no glow, no emoji.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face {
+    font-family: "Space Grotesk";
+    src: url("fonts/space-grotesk.woff2") format("woff2");
+    font-weight: 500 700;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: "JetBrains Mono";
+    src: url("fonts/jetbrains-mono.woff2") format("woff2");
+    font-weight: 500 700;
+    font-display: swap;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1200px;
+    height: 630px;
+    background: #FFFCF0;
+    color: #201B16;
+    font-family: "Space Grotesk", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  .card {
+    width: 1200px;
+    height: 630px;
+    padding: 56px 72px 48px;
+    display: flex;
+    flex-direction: column;
+  }
+  .top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .brand {
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .brand .dollar { color: #AF3029; }
+  .domain {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 20px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    color: #6B6259;
+  }
+  .rule {
+    height: 4px;
+    background: #AF3029;
+    margin-top: 28px;
+  }
+  .pill {
+    align-self: flex-start;
+    margin-top: 40px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #AF3029;
+    border: 2px solid #AF3029;
+    border-radius: 999px;
+    padding: 10px 20px;
+  }
+  .title-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 0;
+  }
+  h1 {
+    font-size: {{TITLE_SIZE}}px;
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+  }
+  .subtitle {
+    margin-top: 24px;
+    font-size: 30px;
+    font-weight: 500;
+    line-height: 1.4;
+    color: #6B6259;
+  }
+  .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid #E5DDD0;
+    padding-top: 24px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 19px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    color: #6B6259;
+  }
+  .foot .site { color: #201B16; font-weight: 700; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="top">
+      <span class="brand"><span class="dollar">$</span> izaz</span>
+      <span class="domain">IZAZ.DEV</span>
+    </div>
+    <div class="rule"></div>
+    <span class="pill">{{CATEGORY}}</span>
+    <div class="title-wrap">
+      <h1>{{TITLE}}</h1>
+      {{SUBTITLE}}
+    </div>
+    <div class="foot">
+      <span class="site">izaz.dev</span>
+      <span>Cybersecurity &middot; AI &middot; Engineering</span>
+    </div>
+  </div>
+</body>
+</html>

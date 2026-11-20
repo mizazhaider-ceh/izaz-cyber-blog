@@ -1,0 +1,36 @@
+# Weekly link check for izaz.dev
+# Audit item 48. Checks every link on the live site once a week,
+# Mondays at 08:00 UTC, using the lychee action. The live site URL is
+# checked directly, so no build is needed. Localhost links and mailto
+# links are excluded. A broken link fails the run.
+
+name: Link Check
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Check links on the live site
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --verbose
+            --no-progress
+            --exclude-mail
+            --exclude '^https?://localhost'
+            --exclude '^https?://127\.0\.0\.1'
+            https://izaz-cyber-blog.vercel.app
+          fail: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

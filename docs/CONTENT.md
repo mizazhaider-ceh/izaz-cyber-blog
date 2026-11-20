@@ -175,3 +175,70 @@ A grep audit was run over `content/` and `src/lib/content.ts` for the banned ite
 - Unslop pass: no hype or filler words found (supercharge, seamless, unlock, revolutionize, game-changing, delve, tapestry, ever-evolving, embark, leverage, moreover, furthermore, "it is important to note" all absent). Each article has 9 to 13 H2 sections, 3 to 4 callouts, 2 diagrams, and code blocks where the topic needs them.
 - Verification: `npm run build` clean, `npx tsc --noEmit` clean, 32 static routes (20 plus 12 new). Playwright on home, blog index, and 9 new articles at 1440px and 390px: 0 console errors, 0px overflow, diagrams rendered and viewed, copy buttons present. Dark mode spot-checked on the CSCB article via the site's localStorage theme key.
 - Left out of Batch 2 as a whole: named 2025/2026 desync disclosures and vendor-specific incidents (not verified against a primary source), the EchoLeak case, and Nmap timing templates T0 to T5 (word budget). No topic needed the Frida fallback.
+
+## Pre-publish checklist
+
+Check every item below before any article goes live. These rules come from the site audit of 20 Nov 2026 (items 7 and 8) and apply the day an image exists on the site.
+
+### LCP image rules (audit item 7)
+
+- The hero image, or whichever image is the Largest Contentful Paint (LCP) element, gets `fetchpriority="high"` and is never lazy-loaded. Do not put `loading="lazy"` on it.
+- The hero image must be discoverable in the initial HTML: a plain `img` tag, or `next/image` with `priority`, served in the first response. Never load it only after JavaScript runs.
+- Every other image on the page is lazy-loaded with `loading="lazy"`.
+- Today the site has no photographic hero image, so LCP is text and nothing is broken. Apply this rule the day a hero or article image is added.
+
+### Explicit image dimensions (audit item 8)
+
+- Every `img` carries `width` and `height` attributes, or a CSS `aspect-ratio`, so the browser reserves the space before the image loads and text is not pushed down.
+- Keep the local result at CLS 0 on home and article pages (measured locally; diagrams are SVGs in fixed containers).
+- Re-verify CLS after OG images are added, since OG images are the usual CLS source. Target: CLS 0.1 or less.
+
+## Publishing schedule and formats
+
+The 11 batch articles of 18 Nov 2026 share one date and one shape (about 4,300 to 4,700 words, exactly 4 diagrams each, each rendering as "23 min read"). That reads as one upload, not a body of work. From now on, publish on a real schedule and vary the format. Never backdate an article to fake a history.
+
+### Schedule
+
+- Cadence: one article every 1 to 2 weeks, starting 20 Nov 2026 forward.
+- Publish dates are real publish dates only. An article dated 20 Nov 2026 or later was published on that date.
+- If a week is missed, the schedule slips forward. Do not fill the gap with a backdated post.
+- Planned slots live in `docs/CONTENT-CALENDAR.md`. A slot moves from planned to published only when the article is live.
+
+### Format taxonomy
+
+Four formats, one line each. Pick the format before writing, and let it set the length and shape.
+
+- **Deep dive**: a long explainer of one topic, grounded in primary sources, with diagrams and worked examples.
+- **Short note**: a brief post, one idea, one finding, or one fix, readable in a few minutes.
+- **Lab log**: a dated record of something actually built, run, or broken, with real commands and real output.
+- **Teardown**: a close look at one real system, file, or mechanism, taken apart piece by piece to show how it works.
+
+## Audit implementation, 20 Nov 2026 (all 53 items)
+
+The outstanding-audit of 20 Nov 2026 listed 53 items. All 53 were implemented the same day by 30 specialized agents, merged and verified by the coordinator. Build clean, tsc clean, 37 static routes, Playwright on home, blog index, 3 articles, about, search, series and changelog at 1440px and 390px: 0 horizontal overflow, 1 H1 per page, dark mode toggle works, copy buttons work (verified with clipboard permissions granted), search for a body-only word returns 1 result, TOC scroll-spy 5 of 5 headings. legacy-scan on src: 0 findings. Banned-item grep over content/ and src/: zero hits.
+
+### What changed
+
+- SEO: canonical, sitemap, robots and OG URLs now point at the live host https://izaz-cyber-blog.vercel.app (izaz.dev is not live). Metadata merge fixed (RSS alternate, og:site_name, og:locale on every page). WebSite JSON-LD added. Favicon ICO plus apple-touch-icon rendered from the `$` mark. RSS link in the footer.
+- OG cards: 18 PNGs at 1200x630 (17 articles plus default), in the blog's own look, wired into every page's metadata.
+- Identity: hand-drawn SVG `$izaz` signature mark in the header and hero; hero copy rewritten from verified facts only (CSCB 2026, CNSP with Merit).
+- Dark mode: first visit follows the OS preference, stored value wins, theme-color per theme, color-scheme meta.
+- Typography: article and About prose narrowed to 68ch.
+- Diagrams: component no longer forces a 640px minimum width (verified at 390px, no overflow), accessible names added without double-announcing.
+- Performance: font-size-adjust added, prefetch disabled on below-fold lists, performance budget in docs/PERFORMANCE-BUDGET.md.
+- Analytics: Vercel Web Analytics and Speed Insights enabled; privacy page rewritten to state the cookieless analytics honestly.
+- Content: all 17 articles got updatedAt 2026-11-20, an honesty note (explainer vs build log), outbound source links (every URL curl-checked 200 before linking), and 3 to 4 internal links each. Four new diagrams added where articles had none (90-day plan, AgentArsenal, PenTrix flag flow, PSA content flow, AXML file layout). Two runnable Python samples added (CSCB scoreboard summary, AI injection allowlist), both executed and matching the article output.
+- Features: 4 series with index page and prev/next nav, reading progress bar, scroll-spy TOC, share buttons plus print stylesheet, feedback box (localStorage vote only, nothing sent), newsletter component (hidden until a Buttondown username is set), About character portrait (Pexels, Vinur., free license, credited).
+- Trust: security.txt, security headers (CSP, HSTS 31536000, nosniff, Referrer-Policy), CI workflow with Lighthouse thresholds, weekly link check, changelog page linked from the footer.
+- Accessibility: contrast measured in both themes (one failing pair fixed: light text-subtle 3.59:1 to 4.69:1), skip link target made focusable, 5 suppressed focus indicators restored, reduced-motion global hack removed.
+
+### What was left out, and why
+
+- Newsletter sending: the component is built but renders nothing until the author creates a free Buttondown account and sets BUTTONDOWN_USERNAME. No account was created, no form that goes nowhere ships. Setup in docs/NEWSLETTER.md.
+- Uptime monitor: no account created (needs the author's login). Exact free UptimeRobot setup in docs/UPTIME.md.
+- Search Console verification: needs the site owner to prove ownership. Steps in docs/SEARCH-CONSOLE.md.
+- Social card debuggers (Facebook Sharing Debugger, X Card Validator): need the deployed site. Steps in docs/OG-CHECKLIST.md.
+- Live preview noindex check: needs a real PR. Procedure in docs/PREVIEW-CHECK.md.
+- Cross-posting to DEV, Medium and LinkedIn: process only, in docs/DISTRIBUTION.md. Posting needs the author's logged-in accounts.
+- Two link corrections made during merge (verified against the authenticated GitHub API): the AgentArsenal repo link now uses the exact case https://github.com/mizazhaider-ceh/AgentArsenal; the PowerShell Academy repo link was removed from References because that repo is private and returns 404 to every public reader, while the live site link stays.
+- One CSS fix made during merge: long URLs in article links now wrap (article a, overflow-wrap anywhere). A 366px URL in the Linux lab article overflowed the page by 24px at 390px; after the fix, overflow is 0 on all checked articles.

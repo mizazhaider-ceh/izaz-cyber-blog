@@ -207,3 +207,71 @@ fact was changed. Files changed: 8, 36 insertions, 12 deletions.
   a real browser grants it on user gesture, so this matches real use.
 - Screenshots in `/tmp/izaz-qa/` are ephemeral and will not persist with the
   repo; this report is the durable evidence.
+
+## 10. Reduced-motion pass (audit item 22)
+
+Date: 2026-11-20. Scope: `prefers-reduced-motion` handling across the site.
+
+### 10.1 Defect found and fixed
+
+`src/app/globals.css` contained the global hack the audit forbids: a
+`prefers-reduced-motion: reduce` block setting `animation-duration: 0.01ms
+!important`, `animation-iteration-count: 1 !important`, and
+`transition-duration: 0.01ms !important` on `*`, `*::before`, and `*::after`.
+Per the modern-web-guidance `motion` guide, a near-zero global duration can
+make animations more jarring, so it was removed. Replaced with narrow,
+case-by-case handling: `scroll-behavior: auto` on `html` under reduced
+motion, and `animation: none` plus `display: none` on `.reading-progress`
+(the site's only CSS animation). No `!important` remains in the
+reduced-motion rules. The unlayered `scroll-behavior: auto` rule wins over
+the `scroll-behavior: smooth` rule inside `@layer base` without it.
+
+### 10.2 Motion inventory (full grep of `src/`)
+
+- Particles canvas (`src/components/Particles.tsx`): the only JavaScript
+  motion. Verified in source: under reduced motion it draws the dots once
+  and never starts the animation loop; otherwise it pauses when the page
+  is hidden (`visibilitychange`) and when the canvas scrolls out of view
+  (`IntersectionObserver`, threshold 0). No code change needed.
+- Reading progress bar (`src/components/ReadingProgress.tsx`,
+  `src/app/globals.css`): CSS scroll-driven animation
+  (`animation-timeline: scroll()`) plus a JavaScript fallback that sets
+  `transform: scaleX(...)`. Under reduced motion the bar is hidden
+  (`display: none`) and its animation is set to `none`, so the fallback
+  transform has nothing visible to move. The bar is decorative
+  (`aria-hidden="true"`), so hiding it removes no content.
+- Smooth scrolling: `scroll-behavior: smooth` on `html` only. The search
+  palette `scrollIntoView({ block: "nearest" })` sets no behaviour, so it
+  follows the CSS value and becomes instant under reduced motion.
+- Transitions: every `transition-*` in `src/` is `transition-colors`
+  (colour-only hover and focus feedback). Per the `motion` guide these stay
+  enabled; only spatial movement, scaling, rotation, or persistent
+  animations are disabled. No element is scaled, translated, or rotated.
+- No parallax, no keyframes other than `reading-progress-grow`, no
+  `animate-pulse`, `animate-ping`, or `transition-all` in `src/`.
+- Content never hidden: no element starts at `opacity: 0` or depends on an
+  animation reaching its end state, so turning motion off cannot leave
+  content invisible. (Earlier QA, section 4, confirmed the hero heading
+  renders at opacity 1 with reduced motion emulated.)
+
+### 10.3 Reduced-motion checklist (run on every future QA pass)
+
+1. Emulate `prefers-reduced-motion: reduce` in the browser (DevTools
+   rendering tab) at desktop and mobile widths, light and dark themes.
+2. Confirm the hero heading and all page content are visible (opacity 1,
+   nothing left at an intermediate state).
+3. Confirm the particles canvas shows static dots and the dots never move
+   (watch for at least 5 seconds).
+4. Confirm the reading progress bar does not appear on article pages.
+5. Confirm anchor and Table of Contents jumps are instant, with no smooth
+   scrolling.
+6. Confirm hover and focus colour changes still work (links, buttons,
+   theme toggle); reduced motion must not remove focus indicators.
+7. Scroll the article page, switch tabs, and scroll the canvas out of view;
+   confirm no animation resumes while reduced motion is on.
+8. Grep `src/` for `animation`, `@keyframes`, `transition-`,
+   `requestAnimationFrame`, and `parallax` after any new feature lands;
+   any new motion must be added to the inventory above with its
+   reduced-motion handling.
+9. Never reintroduce a global `animation-duration: 0.01ms` rule; handle
+   each new animation case by case, in its own rule.
