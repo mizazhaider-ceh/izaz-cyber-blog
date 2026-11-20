@@ -21,7 +21,7 @@ export const changelog: ChangelogEntry[] = [
     title: "Audit fixes shipped: 53 items",
     items: [
       "Site audit completed (53 items) and all fixes shipped: canonical domain, metadata, OG images, favicon, security headers, analytics, series, reading progress, scroll-spy TOC, share and print, feedback box, and the About portrait.",
-      "All 17 articles updated with honest source notes, outbound source links, and internal links. Four new diagrams added where articles had none.",
+      "All 17 articles updated with honest source notes, outbound source links, and internal links. Five new diagrams added where articles had none.",
       "Public changelog page added at /changelog, so site changes are listed by date.",
       "Pre-publish image rules written into docs/CONTENT.md: hero image gets fetchpriority high and is never lazy-loaded, every image carries width and height, CLS re-verified after OG images are added.",
       "Real publishing schedule and format taxonomy written into docs/CONTENT.md, with a content calendar in docs/CONTENT-CALENDAR.md. No backdating.",
