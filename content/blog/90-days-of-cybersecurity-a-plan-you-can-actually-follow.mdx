@@ -3,6 +3,7 @@ title: "90 days of cybersecurity, a plan you can actually follow"
 slug: "90-days-of-cybersecurity-a-plan-you-can-actually-follow"
 description: "Most roadmaps are link lists. This one is a workout program: 90 daily tasks in 10 phases, one to two hours a day, every tool free, every day ending with something built, broken, or captured."
 date: "2026-10-20"
+updatedAt: "2026-11-20"
 category: "Learning"
 tags: ["90-days", "study plan", "roadmap", "beginners", "pentrix"]
 author: "Muhammad Izaz Haider"
@@ -14,22 +15,81 @@ Most roadmaps are link lists. This one is a workout program: networking before h
 
 That is the idea behind 90 Days of Cyber, a 90-day hands-on study plan that takes you from zero to job-ready fundamentals. One to two hours a day, every tool free, every single day ends with something you built, broke, or captured yourself.
 
+<Callout type="NOTE" title="About this article">
+This article is a study plan, not a run log. It lays out the 90 Days of Cyber plan from its public repository and explains the order and the rules. It does not claim a completed 90-day run. The one command sample below is a real command from the plan, and its output is labelled illustrative.
+</Callout>
+
 ## The 10 phases
 
 | Days | Phase | What you will be able to do |
 |------|-------|------------------------------|
-| 1-7 | Networking Fundamentals | Read a network like a map, capture traffic with Wireshark, scan with nmap |
+| 1-7 | Networking Fundamentals | Read a network like a map, capture traffic with [Wireshark](https://www.wireshark.org/docs/), scan with [nmap](https://nmap.org/docs.html) |
 | 8-14 | Security Foundations | Think in CIA triad terms, hash and crack, spot phishing on sight |
 | 15-28 | Linux Command Line | Live in the terminal, script in bash, clear Bandit levels |
 | 29-42 | Python for Security | Write your own tools, parse logs, build a port scanner |
-| 43-56 | Web Hacking with the PenTrix VulnLab | Intercept traffic with Burp, exploit real vulnerabilities, earn 50 flags |
+| 43-56 | Web Hacking with the PenTrix VulnLab | Intercept traffic with [Burp Suite](https://portswigger.net/burp), exploit real vulnerabilities, earn 50 flags |
 | 57-63 | Git and GitHub | Version everything, publish your work, collaborate with pull requests |
-| 64-70 | SIEM and Blue Team Basics | Hunt threats in logs with the Elastic Stack, write an incident note |
+| 64-70 | SIEM and Blue Team Basics | Hunt threats in logs with the [Elastic Stack](https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html), write an incident note |
 | 71-77 | Cloud Security Basics | Secure AWS and Azure resources the way attackers see them |
 | 78-84 | Review and Guided Practice | Solve TryHackMe, HackTheBox, and picoCTF challenges against the clock |
 | 85-90 | Capstone: Prove Your Skills | Finish kill-chain scenarios, ship a project, write a professional writeup |
 
 After day 90 comes the career track, days 91 to 95: a one-page resume, a clean GitHub, and a real job search plan.
+
+<Diagram title="The 10 phases, in order" caption="Ten phases in a snake: left to right across the top row, then right to left across the bottom row, then the career track. Each phase assumes the one before it.">
+<svg viewBox="0 0 720 380" width="100%" role="img" aria-labelledby="90-days-of-cybersecurity-a-plan-you-can-actually-follow-d1-title 90-days-of-cybersecurity-a-plan-you-can-actually-follow-d1-desc">
+<title id="90-days-of-cybersecurity-a-plan-you-can-actually-follow-d1-title">Ninety day plan, ten phases in order</title>
+<desc id="90-days-of-cybersecurity-a-plan-you-can-actually-follow-d1-desc">A flow diagram of the ten phases of the ninety day cybersecurity plan in a snake layout, from networking fundamentals through to the capstone, followed by the career track.</desc>
+<rect x="8" y="24" width="128" height="84" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="72" y="60" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">1. Networking</text>
+<text x="72" y="82" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Days 1-7</text>
+<rect x="152" y="24" width="128" height="84" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="216" y="60" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">2. Foundations</text>
+<text x="216" y="82" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Days 8-14</text>
+<rect x="296" y="24" width="128" height="84" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="60" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">3. Linux CLI</text>
+<text x="360" y="82" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Days 15-28</text>
+<rect x="440" y="24" width="128" height="84" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="504" y="60" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">4. Python</text>
+<text x="504" y="82" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Days 29-42</text>
+<rect x="584" y="24" width="128" height="84" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="648" y="60" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">5. Web Hacking</text>
+<text x="648" y="82" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Days 43-56</text>
+<rect x="584" y="132" width="128" height="84" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="648" y="168" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">6. Git and GitHub</text>
+<text x="648" y="190" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Days 57-63</text>
+<rect x="440" y="132" width="128" height="84" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="504" y="168" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">7. SIEM / Blue Team</text>
+<text x="504" y="190" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Days 64-70</text>
+<rect x="296" y="132" width="128" height="84" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="168" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">8. Cloud Security</text>
+<text x="360" y="190" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Days 71-77</text>
+<rect x="152" y="132" width="128" height="84" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="216" y="168" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">9. Review + Practice</text>
+<text x="216" y="190" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Days 78-84</text>
+<rect x="8" y="132" width="128" height="84" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="72" y="168" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">10. Capstone</text>
+<text x="72" y="190" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">Days 85-90</text>
+<line x1="136" y1="66" x2="152" y2="66" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#days-arrow)" />
+<line x1="280" y1="66" x2="296" y2="66" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#days-arrow)" />
+<line x1="424" y1="66" x2="440" y2="66" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#days-arrow)" />
+<line x1="568" y1="66" x2="584" y2="66" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#days-arrow)" />
+<line x1="648" y1="108" x2="648" y2="132" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#days-arrow)" />
+<line x1="584" y1="174" x2="568" y2="174" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#days-arrow)" />
+<line x1="440" y1="174" x2="424" y2="174" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#days-arrow)" />
+<line x1="296" y1="174" x2="280" y2="174" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#days-arrow)" />
+<line x1="152" y1="174" x2="136" y2="174" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#days-arrow)" />
+<rect x="8" y="248" width="704" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="360" y="274" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Days 91-95: Career track</text>
+<text x="360" y="294" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">one-page resume, clean GitHub, real job search plan</text>
+<line x1="72" y1="216" x2="72" y2="248" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#days-arrow)" />
+<text x="360" y="336" textAnchor="middle" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">Each phase assumes the one before it. Go in order.</text>
+<text x="360" y="358" textAnchor="middle" fontSize="12" fill="var(--text-muted)" fontFamily="var(--font-display), sans-serif">Miss a week, pick up where you left off. The days are numbered, not dated.</text>
+<defs>
+<marker id="days-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
 
 ## The rules of the plan
 
@@ -47,9 +107,24 @@ Build in public. From phase 6 onward you push your scripts, notes, and writeups 
 
 Reading about vulnerabilities does not teach exploitation. The labs are woven into the daily tasks, not parked in an appendix.
 
-The plan's home lab for web hacking is the PenTrix VulnLab, an intentionally vulnerable web app with 201 challenges across 29 modules, each its own small website, running locally with docker compose. Flags are earned only by genuine exploitation. You meet it daily in phases 5 and 10, and the phase 5 milestone is 50 earned flags plus a written writeup of your favorite exploit.
+The plan's home lab for web hacking is the [PenTrix VulnLab](/blog/pentrix-vulnlab-building-a-deliberately-vulnerable-lab), an intentionally vulnerable web app with 201 challenges across 29 modules, each its own small website, running locally with docker compose. Flags are earned only by genuine exploitation. You meet it daily in phases 5 and 10, and the phase 5 milestone is 50 earned flags plus a written writeup of your favorite exploit. For an example of what a finished writeup looks like, see the [CTF investigation writeup](/blog/documenting-a-ctf-investigation-cscb-2026).
 
-Other labs in the plan: TryHackMe guided rooms with a free tier, HackTheBox Starting Point machines with a free tier, picoCTF free challenges for timed practice, and OverTheWire Bandit, a Linux wargame over SSH, at the end of phase 3.
+Other labs in the plan: [TryHackMe](https://tryhackme.com/) guided rooms with a free tier, [HackTheBox](https://www.hackthebox.com/) Starting Point machines with a free tier, [picoCTF](https://picoctf.org/) free challenges for timed practice, and [OverTheWire Bandit](https://overthewire.org/wargames/bandit/), a Linux wargame over SSH, at the end of phase 3. For the scanning skills in phase 1, the [network reconnaissance automation guide](/blog/building-network-reconnaissance-automation) covers the same workflow in depth.
+
+A command from phase 1, the first scan you run in the plan:
+
+```bash
+nmap -sn 192.168.56.0/24
+```
+
+Illustrative output:
+
+```text
+Nmap scan report for 192.168.56.10
+Host is up.
+Nmap scan report for 192.168.56.20
+Host is up.
+```
 
 ## What if you fall behind
 
@@ -57,7 +132,7 @@ The days are numbered, not dated. Miss a week, pick up where you left off. Phase
 
 Can you skip to the hacking part? You can, but you will be slower at it. Phases 1 through 4 are what make phase 5 fun instead of frustrating.
 
-Either Windows or Mac works for the early phases. In phase 3 you install a Linux VM, and from then on most hands-on work happens in Linux.
+Either Windows or Mac works for the early phases. In phase 3 you [install a Linux VM](/blog/building-a-practical-linux-security-lab), and from then on most hands-on work happens in Linux.
 
 ## What the plan does not promise
 
@@ -72,3 +147,11 @@ Everything here targets your own machines, your own cloud accounts, or platforms
 - Phase files in the repo: `phases/phase-01-networking.md` through `phases/phase-10-capstone.md`
 - Career track in the repo: `career/resume.md`, `career/job-search.md`
 - Full resource list in the repo: `learn.md`
+- Wireshark documentation: https://www.wireshark.org/docs/
+- Nmap documentation: https://nmap.org/docs.html
+- OverTheWire Bandit wargame: https://overthewire.org/wargames/bandit/
+- TryHackMe: https://tryhackme.com/
+- HackTheBox: https://www.hackthebox.com/
+- picoCTF: https://picoctf.org/
+- PortSwigger Burp Suite: https://portswigger.net/burp
+- Elastic Stack documentation: https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html

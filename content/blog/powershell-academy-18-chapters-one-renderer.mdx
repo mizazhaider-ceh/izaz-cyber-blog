@@ -3,6 +3,7 @@ title: "PowerShell Academy: 18 chapters, one renderer"
 slug: "powershell-academy-18-chapters-one-renderer"
 description: "How I built a free PowerShell learning site with 61 lessons, 102 commands, and 48 glossary terms, driven by structured content data and a single generic lesson renderer."
 date: "2026-11-04"
+updatedAt: "2026-11-20"
 category: "PowerShell"
 tags: ["powershell", "nextjs", "typescript", "teaching", "academy"]
 author: "Muhammad Izaz Haider"
@@ -12,9 +13,13 @@ featured: true
 
 PowerShell is often taught as a list of commands to memorise. I wanted to teach it as a system to understand: PowerShell works with objects, not just text, the pipeline passes those objects from one command to the next, and a few shaping tools, Select, Where, and Sort, answer most everyday questions.
 
-So I built PowerShell Academy, a free public site that teaches PowerShell from the very first command to Active Directory, remoting, Group Policy, and everyday administration tasks, in clear, simple English. No account, no login, no registration. Open the site and start learning.
+So I built PowerShell Academy, a free public site that teaches PowerShell from the very first command to Active Directory, remoting, Group Policy, and everyday administration tasks, in clear, simple English. No account, no login, no registration. Open the site and start learning. For the authentication side of that work, see [Analyzing insecure authentication](/blog/analyzing-insecure-authentication).
 
 It lives at https://powershell-academy-seven.vercel.app/
+
+<Callout type="NOTE">
+This article is a hands-on build log: I built PowerShell Academy myself and ran its build, tests, and content validation locally. It is a learning reference, not a lab: nothing on the site executes PowerShell code, and every example output on the site is labelled as an illustrative output.
+</Callout>
 
 ## The shape of the content
 
@@ -42,7 +47,49 @@ src/
   styles in app/globals.css       Design tokens, light and dark themes
 ```
 
-Because the content is typed, a missing lesson field or a bad quiz answer index fails the build, not the reader. That is the whole point of TypeScript strict mode here: the type checker is the first reviewer of every lesson.
+Because the content is typed, a missing lesson field or a bad quiz answer index fails the build, not the reader. That is the whole point of TypeScript strict mode here: the type checker is the first reviewer of every lesson. The same data-first idea drives [AgentArsenal: 643 skills, one manifest](/blog/agentarsenal-643-skills-one-manifest), where one manifest drives hundreds of skills.
+
+<Diagram title="Content data in, pages out" caption="Four TypeScript content files feed one generic lesson renderer, which generates every lesson page, command page, search result, quiz, and glossary entry.">
+<svg viewBox="0 0 720 400" width="100%" role="img" aria-labelledby="powershell-academy-18-chapters-one-renderer-d1-title powershell-academy-18-chapters-one-renderer-d1-desc">
+<title id="powershell-academy-18-chapters-one-renderer-d1-title">One renderer driven by structured content data</title>
+<desc id="powershell-academy-18-chapters-one-renderer-d1-desc">A data flow diagram: four TypeScript content files feed one generic lesson renderer, which generates the lesson pages, command pages, search, quizzes, and glossary.</desc>
+<rect x="24" y="24" width="180" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1" />
+<text x="114" y="48" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text-primary)" font-family="var(--font-display), sans-serif">curriculum.ts</text>
+<text x="114" y="68" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">18 chapters, 61 lessons</text>
+<rect x="24" y="104" width="180" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1" />
+<text x="114" y="128" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text-primary)" font-family="var(--font-display), sans-serif">commands.ts</text>
+<text x="114" y="148" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">102 commands</text>
+<rect x="24" y="184" width="180" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1" />
+<text x="114" y="208" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text-primary)" font-family="var(--font-display), sans-serif">glossary.ts</text>
+<text x="114" y="228" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">48 terms</text>
+<rect x="24" y="264" width="180" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1" />
+<text x="114" y="288" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text-primary)" font-family="var(--font-display), sans-serif">quizzes.ts</text>
+<text x="114" y="308" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">36 chapter questions</text>
+<rect x="280" y="154" width="160" height="72" rx="6" fill="var(--surface)" stroke="var(--primary)" stroke-width="1.5" />
+<text x="360" y="182" text-anchor="middle" font-size="14" font-weight="600" fill="var(--primary)" font-family="var(--font-display), sans-serif">One lesson renderer</text>
+<text x="360" y="202" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">TypeScript, strict mode</text>
+<rect x="516" y="44" width="180" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1" />
+<text x="606" y="68" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text-primary)" font-family="var(--font-display), sans-serif">61 lesson pages</text>
+<text x="606" y="88" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">objectives, examples, checks</text>
+<rect x="516" y="164" width="180" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1" />
+<text x="606" y="188" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text-primary)" font-family="var(--font-display), sans-serif">102 command pages</text>
+<text x="606" y="208" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">syntax, parameters</text>
+<rect x="516" y="284" width="180" height="56" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1" />
+<text x="606" y="308" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text-primary)" font-family="var(--font-display), sans-serif">Search and quizzes</text>
+<text x="606" y="328" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">glossary, same data</text>
+<path d="M 204 52 L 226 52 L 226 166 L 280 166" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#psa-arrow)" />
+<path d="M 204 132 L 238 132 L 238 182 L 280 182" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#psa-arrow)" />
+<path d="M 204 212 L 250 212 L 250 198 L 280 198" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#psa-arrow)" />
+<path d="M 204 292 L 262 292 L 262 214 L 280 214" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#psa-arrow)" />
+<path d="M 440 166 L 462 166 L 462 72 L 516 72" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#psa-arrow)" />
+<line x1="440" y1="192" x2="516" y2="192" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#psa-arrow)" />
+<path d="M 440 214 L 494 214 L 494 312 L 516 312" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#psa-arrow)" />
+<text x="360" y="372" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">Content is data. The type checker reviews every lesson before a reader sees it.</text>
+<defs>
+<marker id="psa-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
 
 The routes are generated from the same data, so the site stays consistent by construction:
 
@@ -63,7 +110,7 @@ Search is a client side index built from the same lesson, command, and glossary 
 
 ## The stack, and why plain CSS
 
-The stack is Next.js 14 with the App Router, React 18, TypeScript in strict mode, and a plain CSS design system. No database, no accounts, no server code, and no environment variables are needed. The site is static and public, and the build generates 194 static pages.
+The stack is [Next.js](https://nextjs.org/) 14 with the App Router, [React](https://react.dev/) 18, [TypeScript](https://www.typescriptlang.org/) in strict mode, and a plain CSS design system. No database, no accounts, no server code, and no environment variables are needed. The site is static and public, and the build generates 194 static pages.
 
 I chose plain CSS over a utility framework on purpose, and documented the reasoning in `ARCHITECTURE.md`: no configuration churn, no large utility bundle, and full control over the theme. The design uses soft, tactile surfaces: rounded cards with inner and outer shadows, chunky rounded buttons that press down on click, clear hierarchy, and generous spacing. Both themes are intentionally designed, not inverted copies. Light uses soft neutral backgrounds, white surfaces, and blue and purple accents. Dark uses deep neutral surfaces, controlled contrast, and readable code blocks with the same accents.
 
@@ -101,7 +148,7 @@ npm run validate
 
 ## The honesty rules, enforced by tests
 
-This site follows strict scope rules, and they are enforced by tests, not just by intention. No lab tasks and no exam questions are reproduced. All exercises and quiz questions are original. No source prose is copied verbatim. Lesson text is original writing, in the academy voice. Technical facts are checked against official Microsoft PowerShell documentation.
+This site follows strict scope rules, and they are enforced by tests, not just by intention. No lab tasks and no exam questions are reproduced. All exercises and quiz questions are original. No source prose is copied verbatim. Lesson text is original writing, in the academy voice. Technical facts are checked against [official Microsoft PowerShell documentation](https://learn.microsoft.com/powershell/).
 
 Every example output is labelled as an illustrative output, showing the shape of a result, never claimed as a live run. The site is a learning reference, not a lab and not a console. Nothing on this site executes PowerShell code. Quizzes run entirely in the browser.
 
@@ -109,11 +156,12 @@ There are no fake statistics, student numbers, reviews, or testimonials. The num
 
 ## What I would not do again
 
-I would not write content directly into page files, even for the first few lessons. The moment the third lesson repeats the layout of the first two, you have a renderer waiting to be extracted, and extracting it later means touching every page. Starting with structured data and one renderer cost a little more up front and saved far more across 61 lessons.
+I would not write content directly into page files, even for the first few lessons. The moment the third lesson repeats the layout of the first two, you have a renderer waiting to be extracted, and extracting it later means touching every page. Starting with structured data and one renderer cost a little more up front and saved far more across 61 lessons. A structured plan beats a pile of pages, which is also the point of [90 days of cybersecurity, a plan you can actually follow](/blog/90-days-of-cybersecurity-a-plan-you-can-actually-follow).
 
 ## References
 
-- PowerShell Academy: https://powershell-academy-seven.vercel.app/
-- PowerShell Academy repository: https://github.com/mizazhaider-ceh/powershell-academy
-- Microsoft PowerShell documentation, used to check technical facts: https://learn.microsoft.com/powershell/
-- Architecture and content decisions in the repo: `ARCHITECTURE.md`, `DESIGN_SYSTEM.md`, `docs/CURRICULUM_COVERAGE.md`
+- [PowerShell Academy](https://powershell-academy-seven.vercel.app/)
+- [Microsoft PowerShell documentation](https://learn.microsoft.com/powershell/)
+- [Next.js](https://nextjs.org/)
+- [React](https://react.dev/)
+- [TypeScript](https://www.typescriptlang.org/)

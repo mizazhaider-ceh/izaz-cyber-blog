@@ -3,6 +3,7 @@ title: "Exploring reverse engineering fundamentals"
 slug: "exploring-reverse-engineering-fundamentals"
 description: "How to start reading a binary you did not write, from triage to static analysis to dynamic checks, and what each tool is actually for."
 date: "2026-11-18"
+updatedAt: "2026-11-20"
 category: "Reverse Engineering"
 tags: ["reverse", "binary", "ghidra", "assembly"]
 author: "Muhammad Izaz Haider"
@@ -14,13 +15,17 @@ A binary is a program with its source code removed. The compiler took human read
 
 That sounds intimidating, and the first time you open a binary in a disassembler it is. Thousands of functions, addresses instead of names, and a wall of assembly. But the work is not about reading every instruction. It is about asking good questions in the right order, and letting the tools answer the cheap questions first. This article walks through that order: triage, static analysis, dynamic checks, and verification, grounded in the tools I actually use, including Ghidra and the lessons from building my own binary parser.
 
+<Callout type="NOTE">
+This article is a hands-on explainer. The commands are real tools run against binaries I built myself, and every output shown is labelled illustrative. It is not a log of a single real session against someone else's program.
+</Callout>
+
 ## Start with the question, not the tool
 
 Every reverse engineering task starts with a question. "What does this program do when it starts?" is a question. "Where does it check the licence?" is a question. "Open this binary and tell me everything" is not a question, and it is how beginners lose a whole evening staring at a listing.
 
 The question decides the method. If you want to know what files a program touches, running it and watching is faster than reading its code. If you want to know how it validates an input, reading the validation function is faster than guessing inputs for hours. If you want to know what a file format looks like, parsing its bytes by hand teaches you more than any tool output. The workflow in this article is a loop around the question: triage narrows it, static analysis answers part of it, dynamic checks test the answer, and the result usually produces a better question.
 
-The examples in this article use binaries I built myself, clearly labelled illustrative snippets, and my own APK pipeline code. I do not reverse engineer commercial software as an example here, and I do not present anyone else's program as a case study. The skills transfer. The targets are mine.
+The examples in this article use binaries I built myself, clearly labelled illustrative snippets, and my own [APK pipeline code](/blog/writing-my-own-android-binary-xml-parser). I do not reverse engineer commercial software as an example here, and I do not present anyone else's program as a case study. The skills transfer. The targets are mine.
 
 ## Triage: five minutes that save five hours
 
@@ -81,9 +86,9 @@ Write the triage results down before you open the decompiler. Format, architectu
 
 Before the tools make sense, the format has to make sense. A binary is not one undifferentiated block of code. It is a container with a header, tables, and sections, each with a job, and the operating system loader reads the header to decide how to run it. The two formats you will meet most are ELF on Linux and PE on Windows, and they solve the same problem in different ways.
 
-An ELF file starts with an ELF header at offset zero of the file. The header identifies the file: the magic bytes, the class (32-bit or 64-bit), the byte order, the machine type, and the entry point, the virtual address where execution starts. It also holds two offsets: one to the program header table, and one to the section header table. The program header table describes segments, the chunks the loader maps into memory. The section header table describes sections, the logical groupings the linker and the debugger care about. The ELF manual page puts the distinction simply: the loader sees segments, the linker sees sections, and a segment contains one or more sections.
+An ELF file starts with an ELF header at offset zero of the file. The header identifies the file: the magic bytes, the class (32-bit or 64-bit), the byte order, the machine type, and the entry point, the virtual address where execution starts. It also holds two offsets: one to the program header table, and one to the section header table. The program header table describes segments, the chunks the loader maps into memory. The section header table describes sections, the logical groupings the linker and the debugger care about. The [ELF manual page](https://man7.org/linux/man-pages/man5/elf.5.html) puts the distinction simply: the loader sees segments, the linker sees sections, and a segment contains one or more sections.
 
-A PE file starts with a DOS header and a small DOS stub, kept for compatibility, and the DOS header holds an offset to the real PE header. The PE header consists of a four byte signature, the letters "PE" followed by two null bytes, a COFF file header, and an optional header that is required for executable files despite its name. The COFF header records the machine type, the number of sections, and the size of the optional header. After the headers comes the section table, and then the sections themselves. Microsoft's PE specification notes that the Windows loader limits a file to 96 sections.
+A PE file starts with a DOS header and a small DOS stub, kept for compatibility, and the DOS header holds an offset to the real PE header. The PE header consists of a four byte signature, the letters "PE" followed by two null bytes, a COFF file header, and an optional header that is required for executable files despite its name. The COFF header records the machine type, the number of sections, and the size of the optional header. After the headers comes the section table, and then the sections themselves. Microsoft's [PE specification](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format) notes that the Windows loader limits a file to 96 sections.
 
 The sections themselves are the same idea in both formats, and three of them do most of the work. The `.text` section holds the executable code. The `.rodata` section holds read-only data, including the strings you saw in triage. The `.data` section holds initialised writable data, and `.bss` holds zero-initialised data that takes no space in the file, because the loader simply fills it with zeroes at runtime. If you know which section you are in, you know what kind of thing you are looking at, and that is half of reading a binary.
 
@@ -118,7 +123,7 @@ The entry point deserves a pause, because beginners often assume a program start
 
 Static analysis means studying the binary without executing it. It is the safe way to start, because nothing in the binary runs, and it is the way to answer questions about logic: how does this check work, what does this function compute, what happens if the input is different?
 
-Ghidra is the tool I reach for here. It is a software reverse engineering framework created and maintained by the National Security Agency, free and open source, and it combines a disassembler, a decompiler, graphing, and scripting in one program. You create a project, import the binary, and run auto-analysis. Ghidra parses the headers, finds the functions, and builds the views you will spend your time in.
+[Ghidra](https://ghidra-sre.org/) is the tool I reach for here. It is a software reverse engineering framework created and maintained by the National Security Agency, free and open source, and it combines a disassembler, a decompiler, graphing, and scripting in one program. You create a project, import the binary, and run auto-analysis. Ghidra parses the headers, finds the functions, and builds the views you will spend your time in.
 
 Three views matter most. The **listing** shows the disassembly: the machine instructions, one per line, with addresses. The **decompiler** shows the same function as approximate C-like pseudocode, which is usually the view you read first, because it is closer to how a programmer thinks. The **symbol tree** lists the functions, labels, and data, and it is how you navigate. The decompiler does not recover the original source code. Compilation discards names, comments, and formatting, and the decompiler reconstructs a plausible equivalent, not the original. Treat its output as a reading aid, not as ground truth, and check anything important against the listing.
 
@@ -136,7 +141,7 @@ Static analysis is safe, but it is not complete. A program can hide behaviour be
 
 The fastest way I have learned to understand a binary format is to parse it by hand. My APK security pipeline reads Android app packages, and the first thing it has to do is read `AndroidManifest.xml`. Inside an APK, the manifest is not text XML. It is binary XML, a compact format called AXML, made of chunks. Every chunk starts with a type, a header size, and a size. The file starts with a magic number, then a string pool chunk holding every string in the file, then start element chunks. I wrote my own parser for it, in Python, using only the standard library, because the pipeline is meant to run anywhere Python runs, with no extra dependencies.
 
-Writing that parser taught me more about binary formats than reading about them ever did, and it taught me one lesson I now carry into every reverse engineering task. My parser passed every test I wrote, and then it failed on the first real APK. The bug was one wrong offset: a field called `attributeStart` is relative to the end of the node header, not relative to the chunk start, and my own test writer had stored the wrong value, so my tests were testing my misunderstanding, not the format. The fix was one line, and the verification was to check the parser against androguard as ground truth, on real APKs, until the package names, permission counts, and component counts matched exactly.
+Writing that parser taught me more about binary formats than reading about them ever did, and it taught me one lesson I now carry into every reverse engineering task. My parser passed every test I wrote, and then it failed on the first real APK. The bug was one wrong offset: a field called `attributeStart` is relative to the end of the node header, not relative to the chunk start, and my own test writer had stored the wrong value, so my tests were testing my misunderstanding, not the format. The fix was one line, and the verification was to check the parser against [androguard](https://github.com/androguard/androguard) as ground truth, on real APKs, until the package names, permission counts, and component counts matched exactly.
 
 The lesson is general. **Your tools can agree with each other and still be wrong, if they share your mistake.** That is true of a parser you wrote, and it is true of a decompiler reading a binary. The defence is the same in both cases: verify against an independent source. For the parser, the independent source was androguard. For a decompiled function, the independent source is the disassembly, or a dynamic run that shows the function behaving the way you think it does.
 
@@ -146,7 +151,7 @@ Parsing a format by hand also teaches you the shape of binary data in a way that
 
 Dynamic analysis means observing the program while it runs. It answers the questions static analysis cannot: what files does it open, what network connections does it make, what does it do with this specific input, and what happens step by step inside a function?
 
-The first rule of dynamic analysis is isolation. An unknown binary runs in a virtual machine or a container you can throw away, never on your main system, and never on a network with anything you care about. The analysis machine has no real credentials, no real data, and a snapshot you can restore. That is not paranoia. It is the same rule as the lab network in the recon pipeline: the work happens inside a boundary you control.
+The first rule of dynamic analysis is isolation. An unknown binary runs in a virtual machine or a container you can throw away, never on your main system, and never on a network with anything you care about. The analysis machine has no real credentials, no real data, and a snapshot you can restore. That is not paranoia. It is the same rule as the lab network in the [recon pipeline](/blog/building-network-reconnaissance-automation): the work happens inside a boundary you control.
 
 The cheapest dynamic tool is the system call tracer. On Linux, `strace` shows every system call a program makes: files opened, network connections, memory allocated. Run a program under `strace` with an input, and you get a transcript of what it actually did, which is often more informative than an hour of reading code:
 
@@ -167,7 +172,7 @@ Two lines, and you know the program looked for a system config file, did not fin
 
 A debugger is the heavier tool. It lets you stop the program at a chosen address, inspect registers and memory, step through instructions one at a time, and change values to see what happens. Ghidra is not a debugger, so this is where a separate debugger comes in, and where the static and dynamic work meet: you find the address of the interesting function in Ghidra, set a breakpoint there in the debugger, and watch what goes in and what comes out. The two views together are stronger than either alone, because the static view tells you where to stop, and the dynamic view tells you what actually happens there.
 
-Runtime instrumentation is a third option. Frida, for example, lets you inject JavaScript into a running process and observe or change function calls as they happen. I have used it to bypass checks in my own test builds, where the point was to learn how the check worked by watching it be skipped. The principle is the same as the debugger, with a different shape: instead of stopping the program, you watch it from the inside while it runs.
+Runtime instrumentation is a third option. [Frida](https://frida.re/), for example, lets you inject JavaScript into a running process and observe or change function calls as they happen. I have used it to bypass checks in my own test builds, where the point was to learn how the check worked by watching it be skipped. The principle is the same as the debugger, with a different shape: instead of stopping the program, you watch it from the inside while it runs.
 
 The discipline of dynamic analysis is the same as the discipline of static analysis: **write down what you observed, and separate it from what you concluded**. "The program opened config.txt" is an observation. "The program requires config.txt" is a conclusion, and it needs one more test, running without config.txt, before it earns that wording.
 
@@ -227,7 +232,7 @@ A few mistakes show up so often that they are worth naming directly.
 
 The best practice targets are programs you compile yourself. Write a small C program, compile it with symbols, and then compile it again stripped, with optimisation on, and compare what Ghidra shows you in each case. Change one thing at a time: add a string check, add a loop, add a function call, and watch how the disassembly changes. You are building a mental model of what the compiler does to code, and there is no faster way to build it than to watch it happen to code you wrote.
 
-Next, pick a small real format and parse it by hand, the way I did with AXML. ELF itself is a good choice: write a short Python script that reads the ELF header, prints the entry point, and lists the sections. The ELF manual page documents every field, and `readelf` gives you ground truth to check against. When your script and `readelf` agree, you understand the format. When they disagree, you have found the exact place where your understanding is wrong, which is the most useful thing a practice exercise can give you.
+Next, pick a small real format and parse it by hand, the way I did with [AXML](/blog/writing-my-own-android-binary-xml-parser). ELF itself is a good choice: write a short Python script that reads the ELF header, prints the entry point, and lists the sections. The ELF manual page documents every field, and `readelf` gives you ground truth to check against. When your script and `readelf` agree, you understand the format. When they disagree, you have found the exact place where your understanding is wrong, which is the most useful thing a practice exercise can give you.
 
 Then move to a small program someone else wrote for practice, a crackme style exercise built for learning, where the goal is stated up front and the program is meant to be read. The goal matters: a practice target with a clear question teaches the workflow, while a random binary with no question teaches only frustration.
 
@@ -247,5 +252,7 @@ The binary is not trying to confuse you. It is simply a program with the helpful
 
 - Ghidra Software Reverse Engineering Framework, National Security Agency, disassembly, decompilation, graphing, and scripting, free and open source: https://ghidra-sre.org/
 - Ghidra source repository and documentation, National Security Agency: [Ghidra on GitHub](https://github.com/NationalSecurityAgency/ghidra)
+- Androguard, a Python tool for analysing Android files, used here as ground truth when verifying the AXML parser: https://github.com/androguard/androguard
+- Frida, a dynamic instrumentation toolkit for observing and changing function calls in a running process: https://frida.re/
 - elf(5), Linux manual page, format of Executable and Linking Format (ELF) files, ELF header, program header table, and section header table: https://man7.org/linux/man-pages/man5/elf.5.html
 - Microsoft Portable Executable and Common Object File Format Specification, PE header, COFF header, optional header, and section table: [PE Format specification](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)

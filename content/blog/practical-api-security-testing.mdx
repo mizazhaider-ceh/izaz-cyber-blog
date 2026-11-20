@@ -3,6 +3,7 @@ title: "Practical API security testing"
 slug: "practical-api-security-testing"
 description: "How to test an API properly, from discovery to authentication and authorisation to input handling to business logic, with a method you can repeat on any API."
 date: "2026-11-18"
+updatedAt: "2026-11-20"
 category: "Web Security"
 tags: ["api", "testing", "web-security", "owasp"]
 author: "Muhammad Izaz Haider"
@@ -12,7 +13,11 @@ featured: false
 
 Most modern applications are APIs with a user interface attached. The web page is a thin client, the mobile app is a thin client, and the real logic lives behind HTTP endpoints. That is good news for testers, because an API is a smaller, cleaner surface than a whole web application, and it is bad news for the same reason: every flaw in the API is reachable by anyone who can send a request, with no browser, no clicks, and no interface in the way.
 
-This article explains how to test an API properly, in an order you can repeat: discovery, authentication, authorisation, input handling, business logic, and reporting. It is grounded in the OWASP API Security Top 10, the 2023 edition, which is the shared vocabulary for API risk, and in the patterns I have seen while building and testing lab APIs of my own. All examples use a local lab API or clearly illustrative endpoints. Never test an API you do not own or do not have explicit written permission to test.
+This article explains how to test an API properly, in an order you can repeat: discovery, authentication, authorisation, input handling, business logic, and reporting. It is grounded in the [OWASP API Security Top 10](https://owasp.org/API-Security/editions/2023/en/0x00-header/), the 2023 edition, which is the shared vocabulary for API risk, and in the patterns I have seen while building and testing lab APIs of my own, including the deliberately vulnerable lab in [PenTrix VulnLab: building a deliberately vulnerable lab](/blog/pentrix-vulnlab-building-a-deliberately-vulnerable-lab). All examples use a local lab API or clearly illustrative endpoints. Never test an API you do not own or do not have explicit written permission to test.
+
+<Callout type="NOTE">
+This article is a testing method grounded in real lab work: the broken object level authorisation example comes from a notes API I built and tested myself, and the other requests and responses are illustrative, with tokens shown as REDACTED. Every test here is for a local lab API you own or have explicit written permission to test.
+</Callout>
 
 ## Why APIs break differently from websites
 
@@ -43,11 +48,11 @@ The order matters. Authorisation tests need authenticated accounts at two privil
 
 ## Step 1: discover the API
 
-Discovery is reconnaissance on a system you own, and it has the same goal as any recon: build a complete map before you start poking. An incomplete map means untested endpoints, and untested endpoints are where the findings hide.
+Discovery is reconnaissance on a system you own, and it has the same goal as any recon: build a complete map before you start poking. An incomplete map means untested endpoints, and untested endpoints are where the findings hide. The mapping habit here is the same one behind [Building network reconnaissance automation](/blog/building-network-reconnaissance-automation).
 
-Start with the documentation, if it exists. An OpenAPI or Swagger specification lists the endpoints, the methods, the parameters, and the response shapes, and it is the fastest route to a complete map. Read it, but do not trust it completely: documentation describes the intended API, and the real API often has extra endpoints, extra parameters, and older versions that the documentation forgot. Check the API version history, and test version 1 as well as version 2, because old versions are frequently left running with old, weaker checks.
+Start with the documentation, if it exists. An [OpenAPI](https://www.openapis.org/) or Swagger specification lists the endpoints, the methods, the parameters, and the response shapes, and it is the fastest route to a complete map. Read it, but do not trust it completely: documentation describes the intended API, and the real API often has extra endpoints, extra parameters, and older versions that the documentation forgot. Check the API version history, and test version 1 as well as version 2, because old versions are frequently left running with old, weaker checks.
 
-Next, watch the API in use. Run the real client, a web front end or a mobile app, against your lab instance, and capture the traffic with a proxy such as Burp Suite or OWASP ZAP. Every request the client makes is an endpoint that exists, and the parameters it sends tell you the data model. Look for requests the documentation did not mention: admin calls made by the front end, debug endpoints, internal endpoints the client uses for its own bookkeeping.
+Next, watch the API in use. Run the real client, a web front end or a mobile app, against your lab instance, and capture the traffic with a proxy such as [Burp Suite](https://portswigger.net/burp) or [OWASP ZAP](https://www.zaproxy.org/). Every request the client makes is an endpoint that exists, and the parameters it sends tell you the data model. Look for requests the documentation did not mention: admin calls made by the front end, debug endpoints, internal endpoints the client uses for its own bookkeeping.
 
 Then enumerate. Try the predictable endpoints: `/api/users`, `/api/admin`, `/api/health`, `/api/debug`, and the same paths under `/api/v1` and `/api/v2`. Look at error messages, because a 404 that says "route not found" and a 405 that says "method not allowed" tell you different things: the second one confirms the route exists. Look at the response headers, which often name the framework, the version, and the authentication scheme. None of this is an attack by itself. It is mapping, and a tester who maps well tests well.
 
@@ -69,9 +74,9 @@ Authentication answers the question "who are you", and the tests here check whet
 
 Start with the login endpoint. Send wrong passwords repeatedly and watch for a lockout, a delay, or a captcha. An endpoint with no limit on attempts can be brute forced, and a login that returns "user not found" for one input and "wrong password" for another leaks which accounts exist. Send the same credentials with different capitalisation, with trailing spaces, and with empty fields, and watch whether the API treats any of those as valid. Check the password reset flow end to end: can a reset token be requested for any account, does it expire, can it be used twice, and can it be guessed from its format.
 
-Then test the token. Most APIs use a bearer token, often a JSON Web Token, sent in the `Authorization` header. Decode it and read the claims: what identity does it carry, what expiry, what role. Then test the edges: a token with no signature, a token signed with the wrong key, a token with the algorithm changed, an expired token, a token for a deleted user, a token sent to the wrong endpoint. Each of these should be rejected, and each rejection should be the same generic 401, not a detailed error that explains which part failed.
+Then test the token. Most APIs use a bearer token, often a [JSON Web Token (RFC 7519)](https://www.rfc-editor.org/rfc/rfc7519), sent in the `Authorization` header. Decode it and read the claims: what identity does it carry, what expiry, what role. Then test the edges: a token with no signature, a token signed with the wrong key, a token with the algorithm changed, an expired token, a token for a deleted user, a token sent to the wrong endpoint. Each of these should be rejected, and each rejection should be the same generic 401, not a detailed error that explains which part failed.
 
-Test what happens without a token, with a token for the wrong audience, and with a token copied from one user to another request. Test logout and revocation: if a token is revoked, does the API actually stop accepting it, or does it keep working until it expires. Many APIs never revoke tokens at all, which is a design decision the team should have made deliberately, not by accident.
+Test what happens without a token, with a token for the wrong audience, and with a token copied from one user to another request. Test logout and revocation: if a token is revoked, does the API actually stop accepting it, or does it keep working until it expires. Many APIs never revoke tokens at all, which is a design decision the team should have made deliberately, not by accident. For a closer look at how authentication fails in practice, see [Analyzing insecure authentication](/blog/analyzing-insecure-authentication).
 
 An illustrative login request against a local lab API looks like this:
 
@@ -163,7 +168,7 @@ Start with the basics: a very long string, an empty string, a number where a str
 
 Then test injection, in the places where input becomes a query or a command. A classic SQL injection probe in a search field, an operating system command in a filename, a template expression in a name field. In a lab API, these probes are safe to run, because the data is yours and the damage is contained. The point is to learn whether the API parameterises its queries and validates its inputs, not to extract data. If a probe changes the response in a way that suggests the input was executed, stop, record the request and the response, and report it. Do not keep going to prove how much you can extract.
 
-Test the API's handling of content types and encodings too. Send JSON to an endpoint that expects form data, send an array where an object is expected, send duplicate fields with different values, and send a request with two content type headers. APIs that parse input loosely often have two parsers that disagree, and the disagreement is where the flaw lives. This is the same lesson as request smuggling, one level up: when two components read the same input differently, the attacker chooses the reading that suits them.
+Test the API's handling of content types and encodings too. Send JSON to an endpoint that expects form data, send an array where an object is expected, send duplicate fields with different values, and send a request with two content type headers. APIs that parse input loosely often have two parsers that disagree, and the disagreement is where the flaw lives. This is the same lesson as [request smuggling](/blog/understanding-http-request-smuggling), one level up: when two components read the same input differently, the attacker chooses the reading that suits them.
 
 Finally, test the limits that belong to API4:2023, unrestricted resource consumption. Send a request with a huge page size, such as `?limit=1000000`, and see whether the API honours it. Upload a large file and see whether there is a size cap. Call an endpoint that triggers a paid third-party service, such as sending a message, and see whether there is a limit per account. These are not injection flaws, but they are API flaws, and they are often found by the same tester, in the same session, with the same habit of asking "what happens if I send more".
 
@@ -259,6 +264,10 @@ Test an API in order: discover the surface, test authentication, test authorisat
 
 ## References
 
-- OWASP API Security Top 10, 2023 edition: https://owasp.org/API-Security/editions/2023/en/0x00-header/
-- OWASP API Security Project: https://owasp.org/www-project-api-security/
-- PortSwigger Web Security Academy, API testing: https://portswigger.net/web-security/api-testing
+- [OWASP API Security Top 10, 2023 edition](https://owasp.org/API-Security/editions/2023/en/0x00-header/)
+- [OWASP API Security Project](https://owasp.org/www-project-api-security/)
+- [PortSwigger Web Security Academy, API testing](https://portswigger.net/web-security/api-testing)
+- [OpenAPI Initiative](https://www.openapis.org/)
+- [Burp Suite](https://portswigger.net/burp)
+- [OWASP ZAP](https://www.zaproxy.org/)
+- [JSON Web Token, RFC 7519](https://www.rfc-editor.org/rfc/rfc7519)

@@ -3,6 +3,7 @@ title: "Writing my own Android binary XML parser, and the one-line bug that brok
 slug: "writing-my-own-android-binary-xml-parser"
 description: "My APK scanner needed to read AndroidManifest.xml without dependencies. My parser passed every test I wrote, then failed on the first real APK. The bug was one wrong base offset."
 date: "2026-10-28"
+updatedAt: "2026-11-20"
 category: "Android Security"
 tags: ["android", "apk", "axml", "python", "parser", "debugging"]
 author: "Muhammad Izaz Haider"
@@ -10,9 +11,13 @@ draft: false
 featured: true
 ---
 
-My APK Security Pipeline reads an Android app package and reports what is wrong with it: a debuggable flag, cleartext traffic, exported components with no permission, secret patterns, risky code. To do any of that, it first has to read `AndroidManifest.xml`.
+My APK Security Pipeline reads an Android app package and reports what is wrong with it: a debuggable flag, cleartext traffic, exported components with no permission, secret patterns, risky code. To do any of that, it first has to read [`AndroidManifest.xml`](https://developer.android.com/guide/topics/manifest/manifest-intro).
 
 There is a catch. Inside an APK, the manifest is not text XML. It is binary XML, a compact format called AXML. Most tools shell out to something else to decode it. I did not want a dependency for that, because the whole point of the pipeline is that it runs anywhere Python 3.10 runs, with standard library only. So I wrote my own parser, in `apk_pipeline/axml.py`.
+
+<Callout type="NOTE">
+About this article: this is a hands-on build log, not an explainer. The parser was written, run on real APKs, and checked against androguard as ground truth, and the outputs shown below are the real results from that work.
+</Callout>
 
 ## What binary XML looks like
 
@@ -21,6 +26,46 @@ The format is little endian, and it is made of chunks. Every chunk starts with a
 A start element chunk, type `0x0102`, holds a namespace reference, a name reference, and then attributes. Each attribute is 20 bytes: namespace reference, name reference, raw value reference, then an 8 byte typed value with a size, a data type, and a data field. The data types I handle are string (`0x03`), int (`0x10`), hex int (`0x11`), and boolean (`0x12`). Anything else falls back to the raw value string.
 
 The parser walks the chunks, decodes the string pool, and builds a plain element tree of dicts: name, attributes, children. The manifest module then reads both binary and plain XML manifests through the same shape, so rules never care which form the input was in.
+
+<Diagram title="Android binary XML file layout" caption="The file starts with a magic number, then a string pool, a resource map, and start element chunks. Inside a start element chunk, attributeStart is relative to the end of the 16 byte node header, so attributes begin at chunk start plus 36.">
+<svg viewBox="0 0 720 380" width="100%" role="img" aria-labelledby="writing-my-own-android-binary-xml-parser-d1-title writing-my-own-android-binary-xml-parser-d1-desc">
+<title id="writing-my-own-android-binary-xml-parser-d1-title">Android binary XML file layout</title>
+<desc id="writing-my-own-android-binary-xml-parser-d1-desc">A horizontal layout bar showing the file header magic, string pool, resource map, and start element chunk, with the start element expanded to show attributes beginning at offset 36.</desc>
+<text x="24" y="30" fontSize="12" fontWeight="600" fill="var(--text-muted)" fontFamily="var(--font-display), sans-serif">FILE LAYOUT, IN ORDER</text>
+<rect x="24" y="44" width="150" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="99" y="70" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">File header</text>
+<text x="99" y="90" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">magic 0x00080003</text>
+<rect x="186" y="44" width="150" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="261" y="70" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">String pool</text>
+<text x="261" y="90" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">every string, once</text>
+<rect x="348" y="44" width="140" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="418" y="70" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Resource map</text>
+<text x="418" y="90" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">skipped by parser</text>
+<rect x="500" y="44" width="196" height="64" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="598" y="70" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Start element 0x0102</text>
+<text x="598" y="90" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">name, then attributes</text>
+<text x="24" y="150" fontSize="12" fontWeight="600" fill="var(--text-muted)" fontFamily="var(--font-display), sans-serif">START ELEMENT CHUNK, EXPANDED</text>
+<rect x="24" y="164" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="84" y="190" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Chunk header</text>
+<text x="84" y="210" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">8 bytes</text>
+<rect x="156" y="164" width="120" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="216" y="190" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Line, comment</text>
+<text x="216" y="210" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">8 bytes</text>
+<rect x="288" y="164" width="160" height="64" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" strokeDasharray="5,4" />
+<text x="368" y="190" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">attributeStart: 20</text>
+<text x="368" y="210" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">relative offset</text>
+<rect x="460" y="164" width="236" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="578" y="190" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Attributes, 20 bytes each</text>
+<text x="578" y="210" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">name, raw value, typed value</text>
+<line x1="84" y1="228" x2="84" y2="272" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<line x1="276" y1="228" x2="276" y2="272" stroke="var(--text-secondary)" strokeWidth="1.5" />
+<text x="180" y="266" textAnchor="middle" fontSize="11" fill="var(--text-secondary)" fontFamily="var(--font-mono), monospace">node header: 16 bytes</text>
+<line x1="288" y1="248" x2="460" y2="248" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="374" y="290" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">Attributes begin at chunk start + 16 + 20 = 36</text>
+<text x="360" y="322" textAnchor="middle" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">The old parser read at chunk start + 20, so it read the wrong bytes.</text>
+<text x="360" y="346" textAnchor="middle" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">The writer stored 36, so roundtrip tests never caught it.</text>
+</svg>
+</Diagram>
 
 ## The tests were green, and the parser was wrong
 
@@ -54,7 +99,7 @@ And the writer, in `axml_write.py`, now stores the spec value 20 instead of 36.
 
 ## Verifying against ground truth
 
-I did not trust the fix on the strength of my own tests, because my own tests were the thing that had failed me. I verified against androguard as ground truth, on three real APKs. The package names, permission counts, and component counts matched exactly:
+I did not trust the fix on the strength of my own tests, because my own tests were the thing that had failed me. I verified against [androguard](https://github.com/androguard/androguard) as ground truth, on three real APKs. The package names, permission counts, and component counts matched exactly:
 
 | APK | Our package | Truth package | Permissions | Components |
 | --- | --- | --- | --- | --- |
@@ -78,19 +123,24 @@ python3 -m apk_pipeline scan samples/vulnerable.apk --static-only
 python3 -m apk_pipeline scan my-test-app.apk --deep --explain
 ```
 
-Deep mode unpacks and decompiles with real tools: apktool decode, jadx decompile, androguard dex facts, plus deep links, network config, signing, and native libraries. Exit codes are 0 for clean at your threshold, 2 for findings at or above your threshold, and 1 for an input or scan error with a plain message, never a traceback.
+Deep mode unpacks and decompiles with real tools: [apktool](https://apktool.org/) decode, [jadx](https://github.com/skylot/jadx) decompile, [androguard](https://github.com/androguard/androguard) dex facts, plus deep links, network config, signing, and native libraries. Decompiling is a skill of its own; see [Exploring reverse engineering fundamentals](/blog/exploring-reverse-engineering-fundamentals) for the background. Exit codes are 0 for clean at your threshold, 2 for findings at or above your threshold, and 1 for an input or scan error with a plain message, never a traceback.
 
 ## The lesson I kept
 
-Roundtrip tests prove your writer and your parser agree. They do not prove either one matches the real world. For a parser, the test that matters is a real file made by someone else's toolchain, checked against an independent tool. I learned that on my own code, on a real APK, and the fix was one line. The four regression tests are there so the next person does not have to learn it the same way.
+Roundtrip tests prove your writer and your parser agree. They do not prove either one matches the real world. For a parser, the test that matters is a real file made by someone else's toolchain, checked against an independent tool. I learned that on my own code, on a real APK, and the fix was one line. The four regression tests are there so the next person does not have to learn it the same way. Documenting what a scan found matters as much as the scan itself; see [Documenting a CTF investigation, CSCB 2026](/blog/documenting-a-ctf-investigation-cscb-2026) for how an investigation report is put together.
 
 ## Limits, stated plainly
 
-Binary manifest parsing covers the common manifest shapes. Very unusual manifests may need a decoded directory input instead. Static patterns are review flags, not proof of exploitability on their own. A real production APK scan and a live Frida run on a real emulator are still the final proof steps, and they are tracked openly in the repo test report. This tool never proves an app is safe. It reports what it found and what it checked. Only run it against apps you built yourself, or apps you have explicit permission to test.
+Binary manifest parsing covers the common manifest shapes. Very unusual manifests may need a decoded directory input instead. Static patterns are review flags, not proof of exploitability on their own. A real production APK scan and a live [Frida](https://frida.re/) run on a real emulator are still the final proof steps, and they are tracked openly in the repo test report. This tool never proves an app is safe. It reports what it found and what it checked. Only run it against apps you built yourself, or apps you have explicit permission to test. For a deliberately vulnerable lab to practise scanning on, see [PenTrix VulnLab: building a deliberately vulnerable lab](/blog/pentrix-vulnlab-building-a-deliberately-vulnerable-lab).
 
 ## References
 
-- APK Security Pipeline repository: https://github.com/mizazhaider-ceh/apk-security-pipeline
+- [APK Security Pipeline repository](https://github.com/mizazhaider-ceh/apk-security-pipeline)
+- [Android app manifest overview, Android Developers](https://developer.android.com/guide/topics/manifest/manifest-intro)
+- [androguard](https://github.com/androguard/androguard)
+- [apktool](https://apktool.org/)
+- [jadx](https://github.com/skylot/jadx)
+- [Frida](https://frida.re/)
 - Test report with the full defect record in the repo: `TEST_REPORT.md`
 - The parser: `apk_pipeline/axml.py`, the writer: `apk_pipeline/axml_write.py`
 - Frida guide in the repo: `frida/README.md`

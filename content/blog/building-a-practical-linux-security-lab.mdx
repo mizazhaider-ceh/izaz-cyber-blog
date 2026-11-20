@@ -3,6 +3,7 @@ title: "Building a practical Linux security lab"
 slug: "building-a-practical-linux-security-lab"
 description: "A lab you can build this weekend: hardware and virtualization choices, attacker, victim, and firewall machines on an isolated network, and the safety rules that keep it sealed off."
 date: "2026-11-18"
+updatedAt: "2026-11-20"
 category: "Linux"
 tags: ["linux", "lab", "virtualization", "hardening"]
 author: "Muhammad Izaz Haider"
@@ -14,11 +15,15 @@ The fastest way to learn security is to break something you own, watch what happ
 
 This article is a practical build guide. It covers the hardware you need, the virtualization choice, the network design that keeps the lab isolated, the three machines that make up a useful lab (attacker, victim, and firewall), and the safety rules that keep an intentionally vulnerable lab from becoming a problem for anyone else. Some parts describe my own habits, and those are marked clearly as my experience. The rest is general guidance: standard commands, standard tools, and choices you can verify against the vendor documentation linked at the end.
 
+<Callout type="NOTE" title="About this article">
+This article is a hands-on build guide based on the author's own lab habit and standard vendor documentation. The commands are real and standard. The command outputs in it are labelled illustrative, because addresses and service lists depend on your own machines.
+</Callout>
+
 ## Why a lab, and why Linux
 
 A lab gives you permission to fail loudly. On a production system, a wrong command can take down a service or delete data. In a lab, a wrong command teaches you something, and a snapshot puts the machine back the way it was. That safety is what makes a lab worth building before you touch anything real.
 
-Linux is a good base for a security lab for three practical reasons. First, the tooling lives here: the scanners, the packet tools, the scripting languages, and the servers you will practise against are all native to Linux, and most of them are free. Second, Linux is transparent. When something goes wrong, you can read the logs, inspect the service, and see exactly what happened, instead of guessing behind a closed interface. Third, the skills transfer. The same commands you use to build a lab VM are the commands you use to administer a real server, read a firewall rule, or investigate a log.
+Linux is a good base for a security lab for three practical reasons. First, the tooling lives here: the scanners, the packet tools, the scripting languages, and the servers you will practise against are all native to Linux, and most of them are free. Second, Linux is transparent. When something goes wrong, you can read the logs, inspect the service, and see exactly what happened, instead of guessing behind a closed interface. Third, the skills transfer. The same commands you use to build a lab VM are the commands you use to administer a real server, read a firewall rule, or investigate a log. This lab is also the home base for the [90-day cybersecurity plan](/blog/90-days-of-cybersecurity-a-plan-you-can-actually-follow), which uses the same three-machine shape from phase 3 onward.
 
 ## What you need: hardware
 
@@ -36,15 +41,15 @@ Start with the hardware you already have. A lab built today on a laptop you own 
 
 ## Choosing the virtualization stack
 
-Virtualization is the layer that lets one physical machine run several virtual ones. For a home lab, the practical choices are VirtualBox, VMware Workstation Player, and KVM with libvirt, plus containers with Docker for lighter workloads. Each has a place, and the right choice depends on your host.
+Virtualization is the layer that lets one physical machine run several virtual ones. For a home lab, the practical choices are [VirtualBox](https://www.virtualbox.org/manual/), [VMware Workstation Player](https://www.vmware.com/products/workstation-player.html), and [KVM with libvirt](https://libvirt.org/), plus containers with [Docker](https://docs.docker.com/) for lighter workloads. Each has a place, and the right choice depends on your host.
 
-**VirtualBox** is free, open source, made by Oracle, and runs on Windows, macOS, and Linux. It is the simplest starting point: install it, create a VM, attach an installer image, and boot. Its networking options, including host-only and internal networks, are the ones this article uses, and its snapshot feature is straightforward. If you are on Windows or macOS and want the lowest friction, start here. The VirtualBox documentation describes the network modes in detail, and it is worth reading the networking section before you wire the lab together.
+**VirtualBox** is free, open source, made by Oracle, and runs on Windows, macOS, and Linux. It is the simplest starting point: install it, create a VM, attach an installer image, and boot. Its networking options, including host-only and internal networks, are the ones this article uses, and its snapshot feature is straightforward. If you are on Windows or macOS and want the lowest friction, start here. The [VirtualBox documentation](https://www.virtualbox.org/manual/) describes the network modes in detail, and it is worth reading the networking section before you wire the lab together.
 
 **VMware Workstation Player** is free for personal use, runs on Windows and Linux, and is polished and fast. Its networking is similar to VirtualBox, with host-only and NAT options, and it handles larger VMs well. If you already use it, there is no reason to switch. The concepts in this article, isolated networks, snapshots, and the three-machine shape, apply exactly the same way.
 
 **KVM with libvirt** is the native Linux option, and it is what I reach for on a Linux host when I want the lab to feel like real infrastructure. KVM is built into the Linux kernel, and libvirt, with the `virt-manager` graphical tool, gives you a clean way to create and manage VMs. It is fast, it integrates well with Linux networking, and it teaches you the tooling that real Linux servers use. It has a steeper first setup than VirtualBox, because you install and configure more pieces yourself, but the result is a lab that behaves like a small data centre. If your host runs Linux and you are comfortable on the command line, KVM is a strong choice.
 
-**Docker** is not a virtual machine, and that distinction matters. A container shares the host kernel, so it is lighter and faster to start than a VM, and it is ideal for running a single application, such as a vulnerable web app, in an isolated process. I use Docker for exactly that: running PenTrix VulnLab, my deliberately vulnerable web lab, as a container bound to localhost only, so I can practise web attacks against a real app without giving it a whole VM. But a container is not a separate machine. It does not have its own kernel, its own firewall, or its own network stack in the same way a VM does. For learning network security, firewall rules, and full-system attacks, you still want VMs. Use Docker for apps, and VMs for machines.
+**Docker** is not a virtual machine, and that distinction matters. A container shares the host kernel, so it is lighter and faster to start than a VM, and it is ideal for running a single application, such as a vulnerable web app, in an isolated process. I use Docker for exactly that: running [PenTrix VulnLab](/blog/pentrix-vulnlab-building-a-deliberately-vulnerable-lab), my deliberately vulnerable web lab, as a container bound to localhost only, so I can practise web attacks against a real app without giving it a whole VM. But a container is not a separate machine. It does not have its own kernel, its own firewall, or its own network stack in the same way a VM does. For learning network security, firewall rules, and full-system attacks, you still want VMs. Use Docker for apps, and VMs for machines.
 
 ## The network design: isolation first
 
@@ -107,11 +112,11 @@ A lab with one attacker and one victim is already useful, but adding a firewall 
 
 ### The attacker VM
 
-The attacker is the machine you work from. It holds your tools, your notes, and your scripts, and it is the only machine you need to log into during most sessions. A common choice is Kali Linux, which ships with the standard security tooling preinstalled: the network scanner nmap, the packet tool Wireshark, the proxy Burp Suite, and the usual command line tools. Kali is a Debian-based distribution, and it is designed for this role. If you prefer to build your own attacker, a plain Debian or Ubuntu VM with the tools you need installed on top works just as well, and it teaches you more about what each tool does, because you chose to install it.
+The attacker is the machine you work from. It holds your tools, your notes, and your scripts, and it is the only machine you need to log into during most sessions. A common choice is [Kali Linux](https://www.kali.org/docs/), which ships with the standard security tooling preinstalled: the network scanner nmap, the packet tool Wireshark, the proxy Burp Suite, and the usual command line tools. Kali is a Debian-based distribution, and it is designed for this role. If you prefer to build your own attacker, a plain Debian or Ubuntu VM with the tools you need installed on top works just as well, and it teaches you more about what each tool does, because you chose to install it.
 
 ### The victim VM
 
-The victim is the machine you practise against. It should be deliberately vulnerable, or at least deliberately misconfigured, because a hardened victim teaches you nothing except that the attack failed. The classic choices are purpose-built vulnerable VMs, such as Metasploitable, which ships with a set of known vulnerable services, or a plain Linux server that you configure yourself with a vulnerable web app, an open service, or a weak configuration.
+The victim is the machine you practise against. It should be deliberately vulnerable, or at least deliberately misconfigured, because a hardened victim teaches you nothing except that the attack failed. The classic choices are purpose-built vulnerable VMs, such as [Metasploitable](https://sourceforge.net/projects/metasploitable/), which ships with a set of known vulnerable services, or a plain Linux server that you configure yourself with a vulnerable web app, an open service, or a weak configuration.
 
 If you build the victim yourself, start small. Install a minimal Debian or Ubuntu server, add a web server with a simple site, and leave one service in a state you can practise against. Then, as you learn, add a second service, a second user, or a second flaw, and document what you changed. The discipline of building the victim yourself is part of the learning: you understand the flaw because you created it.
 
@@ -121,7 +126,7 @@ My own shortcut for the victim role is PenTrix VulnLab, the deliberately vulnera
 
 The firewall is the machine that teaches you networking. It has two network interfaces: one on the isolated lab network, and one facing outward, normally disabled. Its job is to route and filter traffic between the lab and the outside world, and to give you a place to practise firewall rules, packet filtering, and logging.
 
-A minimal Debian install with nftables or iptables is enough. You do not need a heavy firewall distribution to learn the concepts, although distributions such as pfSense or OPNsense are excellent if you want a graphical firewall to study. The value of the firewall VM is not the software, it is the position: it sits between the lab and everything else, and it sees every packet that tries to leave. When you write a rule that blocks the victim from reaching the internet, and then watch the packet counter stay at zero while the attacker can still reach the victim, you have learned something that no diagram can teach as well.
+A minimal Debian install with [nftables](https://wiki.nftables.org/) or iptables is enough. You do not need a heavy firewall distribution to learn the concepts, although distributions such as [pfSense](https://docs.netgate.com/pfsense/en/latest/) or [OPNsense](https://docs.opnsense.org/) are excellent if you want a graphical firewall to study. The value of the firewall VM is not the software, it is the position: it sits between the lab and everything else, and it sees every packet that tries to leave. When you write a rule that blocks the victim from reaching the internet, and then watch the packet counter stay at zero while the attacker can still reach the victim, you have learned something that no diagram can teach as well. The [Linux firewall rules guide](/blog/understanding-linux-firewall-rules) covers the rule syntax this exercise uses.
 
 ## Building it, in order
 
@@ -236,7 +241,7 @@ A lab is only useful if you use it, so here is a first week that builds on itsel
 
 **Day 1: the network.** Ping every machine from every other machine. Draw the network from memory, then compare it to the diagram in this article. Run `ip addr` and `ip route` on each VM and write down what you see. If anything does not match the plan, fix it now.
 
-**Day 2: the scan.** From the attacker, scan the victim with nmap, and write down every open port and service. Then, on the victim, run `ss -tlnp` to see which services are listening, and compare the two lists. The difference between what the victim thinks it is running and what the attacker can see is the start of real network understanding.
+**Day 2: the scan.** From the attacker, scan the victim with nmap, and write down every open port and service. The [network reconnaissance automation guide](/blog/building-network-reconnaissance-automation) covers the same scanning workflow in depth. Then, on the victim, run `ss -tlnp` to see which services are listening, and compare the two lists. The difference between what the victim thinks it is running and what the attacker can see is the start of real network understanding.
 
 **Day 3: the firewall.** On the firewall VM, write a rule that blocks the victim from reaching the internet, and test it. Then write a rule that allows the attacker to reach the victim on one port and blocks it on another, and test that too. Log the blocked packets, and read the log.
 
@@ -250,6 +255,13 @@ Build it this weekend. Take the snapshots. Then break something, restore it, and
 
 - Oracle VirtualBox User Manual, Networking chapter (host-only, internal, NAT, and bridged modes): https://www.virtualbox.org/manual/
 - VirtualBox VBoxManage networking reference, as documented in the VirtualBox User Manual: https://www.virtualbox.org/manual/
+- VMware Workstation Player: https://www.vmware.com/products/workstation-player.html
+- libvirt, KVM virtualization API and tools: https://libvirt.org/
+- Docker documentation: https://docs.docker.com/
 - Kali Linux documentation, installing and using Kali as an attacker platform: https://www.kali.org/docs/
+- Metasploitable, intentionally vulnerable virtual machine: https://sourceforge.net/projects/metasploitable/
+- nftables wiki: https://wiki.nftables.org/
+- pfSense documentation: https://docs.netgate.com/pfsense/en/latest/
+- OPNsense documentation: https://docs.opnsense.org/
 - OWASP, guidance on building a secure lab environment for web application testing, Web Security Testing Guide: https://owasp.org/www-project-web-security-testing-guide/
 - PenTrix VulnLab repository, the deliberately vulnerable web lab mentioned in this article: https://github.com/mizazhaider-ceh/PenTrix-VulnLab

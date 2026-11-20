@@ -3,6 +3,7 @@ title: "PenTrix VulnLab: building a deliberately vulnerable lab"
 slug: "pentrix-vulnlab-building-a-deliberately-vulnerable-lab"
 description: "Why I built a lab with 201 intentionally vulnerable challenges across 29 modules, and how I made sure the flags could only be earned by real exploitation."
 date: "2026-10-20"
+updatedAt: "2026-11-20"
 category: "Web Security"
 tags: ["pentrix", "vulnlab", "web security", "express", "sqlite", "ctf"]
 author: "Muhammad Izaz Haider"
@@ -14,15 +15,19 @@ I learn by breaking things. When I started learning web security, the labs I tri
 
 So I built the lab I wished existed. It is called PenTrix VulnLab, and it is an intentionally vulnerable web app with 201 challenges across 29 modules.
 
+<Callout type="NOTE">
+This article is a hands-on build log: I built PenTrix VulnLab myself and ran it locally, and the commands in it are the real commands to run it. Flags are randomly generated per install at first boot, no flag literal is in any tracked file, and only genuine exploits earn flags.
+</Callout>
+
 ## What the lab is
 
-Every challenge is a small, believable website with a real bug inside: a shop, a login portal, a blog, an API. The modules cover the flaws I kept meeting in real testing: cross-site scripting, SQL injection, broken authentication, broken access control, server-side request forgery, file upload, command injection, XXE, template injection, path traversal, CSRF, API flaws, misconfiguration, JWT attacks, session problems, race conditions, business logic flaws, open redirect, host header injection, CORS, prototype pollution, crypto failures, OAuth flaws, postMessage flaws, client-side template injection, HTTP layer flaws, JSONP, CSV formula injection, and ReDoS.
+Every challenge is a small, believable website with a real bug inside: a shop, a login portal, a blog, an API. The modules cover the flaws I kept meeting in real testing: cross-site scripting, SQL injection, [broken authentication](/blog/analyzing-insecure-authentication), broken access control, server-side request forgery, file upload, command injection, XXE, template injection, path traversal, CSRF, API flaws, misconfiguration, JWT attacks, session problems, race conditions, business logic flaws, open redirect, host header injection, CORS, prototype pollution, crypto failures, OAuth flaws, postMessage flaws, client-side template injection, HTTP layer flaws, JSONP, CSV formula injection, and ReDoS.
 
-The stack is deliberately boring: Express and SQLite, with plain CSS and JavaScript and no build step. Clone it, read it, run it. That was a design choice, not a shortcut. A lab for learning should have nothing hiding behind a build.
+The stack is deliberately boring: [Express](https://expressjs.com/) and [SQLite](https://www.sqlite.org/), with plain CSS and JavaScript and no build step. Clone it, read it, run it. That was a design choice, not a shortcut. A lab for learning should have nothing hiding behind a build.
 
 ## How to run it
 
-The fastest way is Docker. The compose file binds to `127.0.0.1` only, ships a healthcheck, drops Linux capabilities, and caps CPU and memory.
+The fastest way is [Docker](https://docs.docker.com/). The compose file binds to `127.0.0.1` only, ships a healthcheck, drops Linux capabilities, and caps CPU and memory.
 
 ```bash
 docker compose up --build
@@ -30,7 +35,7 @@ docker compose up --build
 
 Open the URL the app prints on boot. By default that is localhost on port 3000.
 
-Without Docker, with Node 20 or newer:
+Without Docker, with [Node.js](https://nodejs.org/) 20 or newer:
 
 ```bash
 npm install
@@ -53,11 +58,41 @@ That sounds obvious, but it is where most labs fail. If a flag can be earned by 
 
 Flags are randomly generated per install at first boot on your own machine. No flag literal exists in any tracked file, so reading the source on GitHub reveals nothing. Your flags differ from everyone else's, and sharing them proves nothing, because only genuine exploits earn flags.
 
+<Diagram title="How a flag is earned" caption="Every attempt goes through the same check in lib/flags.js. Only a genuine exploit earns a flag; anything else gets a 400 and no flag.">
+<svg viewBox="0 0 720 380" width="100%" role="img" aria-labelledby="pentrix-vulnlab-building-a-deliberately-vulnerable-lab-d1-title pentrix-vulnlab-building-a-deliberately-vulnerable-lab-d1-desc">
+<title id="pentrix-vulnlab-building-a-deliberately-vulnerable-lab-d1-title">How a flag is earned in PenTrix VulnLab</title>
+<desc id="pentrix-vulnlab-building-a-deliberately-vulnerable-lab-d1-desc">A flowchart: an attempt reaches a challenge, lib/flags.js verifies the exploit, a genuine exploit earns a flag and a fake attempt gets a 400 with no flag.</desc>
+<rect x="210" y="24" width="300" height="52" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1" />
+<text x="360" y="46" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text-primary)" font-family="var(--font-display), sans-serif">An attempt reaches a challenge</text>
+<text x="360" y="66" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">any request to a challenge page</text>
+<rect x="210" y="116" width="300" height="52" rx="6" fill="var(--surface)" stroke="var(--primary)" stroke-width="1.5" />
+<text x="360" y="138" text-anchor="middle" font-size="14" font-weight="600" fill="var(--primary)" font-family="var(--font-display), sans-serif">lib/flags.js verifies the exploit</text>
+<text x="360" y="158" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">checks the exploit, not the request</text>
+<rect x="60" y="248" width="260" height="64" rx="6" fill="var(--surface)" stroke="var(--primary)" stroke-width="1.5" />
+<text x="190" y="274" text-anchor="middle" font-size="14" font-weight="600" fill="var(--primary)" font-family="var(--font-display), sans-serif">Genuine exploit</text>
+<text x="190" y="294" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">flag awarded, scoreboard</text>
+<rect x="400" y="248" width="260" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" stroke-width="1" />
+<text x="530" y="274" text-anchor="middle" font-size="14" font-weight="600" fill="var(--text-primary)" font-family="var(--font-display), sans-serif">Not a genuine exploit</text>
+<text x="530" y="294" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">400, no flag</text>
+<line x1="360" y1="76" x2="360" y2="116" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#pentrix-arrow)" />
+<path d="M 300 168 L 300 208 L 190 208 L 190 248" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#pentrix-arrow)" />
+<path d="M 420 168 L 420 208 L 530 208 L 530 248" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" marker-end="url(#pentrix-arrow)" />
+<rect x="205" y="192" width="80" height="18" fill="var(--surface)" />
+<text x="245" y="205" text-anchor="middle" font-size="11" font-weight="600" fill="var(--primary)" font-family="var(--font-mono), monospace">GENUINE</text>
+<rect x="435" y="192" width="80" height="18" fill="var(--surface)" />
+<text x="475" y="205" text-anchor="middle" font-size="11" font-weight="600" fill="var(--text-muted)" font-family="var(--font-mono), monospace">NOT GENUINE</text>
+<text x="360" y="352" text-anchor="middle" font-size="11" fill="var(--text-muted)" font-family="var(--font-mono), monospace">Bare requests, replayed tokens, and page visits all take the right-hand path.</text>
+<defs>
+<marker id="pentrix-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
+
 ## How a session goes
 
 You pick a module on the home page. There are 29 to choose from, with search and difficulty filters. You read the briefing, then open a challenge. Each one looks and behaves like a real little website. The bug is there to be discovered, not announced.
 
-You find the bug and exploit it the way a real attacker would. This lab teaches Burp Suite first: intercept with the Proxy, tamper in the Repeater, automate the boring parts with the Intruder. Burp Community edition clears all 201 challenges. Pro adds Scanner and Collaborator, which you will not need here. Curl still works for quick checks and one-off requests, but it is no longer the lab's default voice.
+You find the bug and exploit it the way a real attacker would. This lab teaches [Burp Suite](https://portswigger.net/burp) first: intercept with the Proxy, tamper in the Repeater, automate the boring parts with the Intruder. Burp Community edition clears all 201 challenges. Pro adds Scanner and Collaborator, which you will not need here. Curl still works for quick checks and one-off requests, but it is no longer the lab's default voice. For the API modules, I follow the same repeatable method described in [Practical API security testing](/blog/practical-api-security-testing).
 
 When the exploit works, the flag lands on the scoreboard. If you are stuck, reveal the hint. Still stuck, `SOLUTIONS.md` walks the technique, never the flag.
 
@@ -102,7 +137,7 @@ Every vulnerability is marked in the source with `// VULN:` comments, 281 across
 
 I would not start with the content before the verification. Early on, the tempting order is to write 201 challenges and check the flags later. That order produces a lab where some flags leak. The verification rule, that only genuine exploits earn flags, has to exist before the first challenge does, because retrofitting it means re-testing everything.
 
-I would also not underestimate the boring parts. Localhost-only binding, the healthcheck, resource limits, the non-root image, loader validation, and the env-based session secret are not glamorous work. They are the work that makes it safe to tell someone to run intentionally vulnerable software on their own machine.
+I would also not underestimate the boring parts. Localhost-only binding, the healthcheck, resource limits, the non-root image, loader validation, and the env-based session secret are not glamorous work. They are the work that makes it safe to tell someone to run intentionally vulnerable software on their own machine. The same isolate-it-first habit is how I approach [building a practical Linux security lab](/blog/building-a-practical-linux-security-lab).
 
 ## Limits, stated plainly
 
@@ -110,7 +145,12 @@ The break-then-fix mode is in development, not finished. The event mode for clas
 
 ## References
 
-- PenTrix VulnLab repository: https://github.com/mizazhaider-ceh/PenTrix-VulnLab
+- [PenTrix VulnLab repository](https://github.com/mizazhaider-ceh/PenTrix-VulnLab)
+- [Express](https://expressjs.com/)
+- [SQLite](https://www.sqlite.org/)
+- [Node.js](https://nodejs.org/)
+- [Docker documentation](https://docs.docker.com/)
+- [Burp Suite](https://portswigger.net/burp)
 - Tool setup guide in the repo: `docs/TOOL_SETUP_GUIDE.md` (Burp, ZAP, sqlmap, ffuf, gobuster, and nmap walkthroughs)
 - Technique walkthroughs in the repo: `SOLUTIONS.md`
 - Implementation plan in the repo: `docs/roadmap/IMPLEMENTATION_PLAN.md`

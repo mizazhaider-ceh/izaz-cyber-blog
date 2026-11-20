@@ -3,6 +3,7 @@ title: "Understanding DevSecOps pipelines"
 slug: "understanding-devsecops-pipelines"
 description: "Where security checks actually belong in a pipeline, what each check catches, and what happens when one fails, with a realistic pipeline as the worked example."
 date: "2026-11-18"
+updatedAt: "2026-11-20"
 category: "DevSecOps"
 tags: ["devsecops", "pipeline", "ci", "automation"]
 author: "Muhammad Izaz Haider"
@@ -14,11 +15,15 @@ A pipeline is a promise. Code goes in one end, and a tested, reviewed, deployabl
 
 This article explains where the checks belong, what each one catches, what should happen when one fails, and how a realistic pipeline fits together. It is a concept explainer with one worked example. The pipeline in the example is a generic, illustrative shape, not a real company pipeline, and every tool mentioned is named because it is a common, documented choice, not because it is the only choice.
 
+<Callout type="NOTE">
+About this article: this is an explainer based on the sources listed in References. It is not a hands-on build log. No pipeline was run for this article, and the workflow fragments and outputs shown below are labelled illustrative.
+</Callout>
+
 ## What DevSecOps actually changes
 
 DevOps changed how software ships. Small changes, merged often, tested automatically, deployed by a pipeline instead of by hand. That speed is the point, and it is also the risk. A manual security review at the end of a release cycle cannot keep up with a team that deploys several times a day. Either security becomes a bottleneck that everyone resents, or it gets skipped, and the team ships fast and blind.
 
-DevSecOps answers that by moving security into the same automation that ships the code. The OWASP DevSecOps Guideline states the goal plainly: detect security issues, whether design flaws or application vulnerabilities, as early and as cheaply as possible, and keep detecting them continuously. Security stops being a phase at the end and becomes a property of the pipeline, checked at every stage where a check can run.
+DevSecOps answers that by moving security into the same automation that ships the code. The [OWASP DevSecOps Guideline](https://owasp.github.io/DevSecOpsGuideline/) states the goal plainly: detect security issues, whether design flaws or application vulnerabilities, as early and as cheaply as possible, and keep detecting them continuously. Security stops being a phase at the end and becomes a property of the pipeline, checked at every stage where a check can run.
 
 Three ideas carry most of the weight. The first is shift left, which means catching a problem closer to the developer who wrote it, where the fix is a small edit instead of a redesign. The second is automation with a decision attached: a scan that only produces a report nobody reads is decoration, while a scan wired to a gate that blocks a merge is a control. The third is that the pipeline itself needs securing, because a pipeline that can deploy code is a powerful target, and a compromised pipeline can ship a compromised artifact to every user at once.
 
@@ -34,9 +39,9 @@ A typical pipeline has the same shape in most teams, even when the tools differ.
 
 **Build.** The build stage turns source code into an artifact, and it is where the deeper scans run. SAST, static application security testing, reads the source code without running it, looking for patterns such as injection flaws, unsafe deserialisation, and weak cryptography. SCA, software composition analysis, reads the dependency list and checks every library, including transitive dependencies the developer never chose directly, against databases of known vulnerabilities and malicious packages. Infrastructure as code scanning belongs here too: it reads Terraform, Helm, or Kubernetes manifests and flags misconfigurations such as a storage bucket open to the world or a container running as root.
 
-**Test.** Once the application runs, dynamic checks become possible. DAST, dynamic application security testing, probes the running application from the outside, the way an attacker would, sending requests and watching responses. IAST, interactive application security testing, instruments the running application during its own test suite, so it can see inside while the tests exercise the code. API security testing also belongs here, since an API is only truly testable when it answers requests.
+**Test.** Once the application runs, dynamic checks become possible. DAST, dynamic application security testing, probes the running application from the outside, the way an attacker would, sending requests and watching responses. IAST, interactive application security testing, instruments the running application during its own test suite, so it can see inside while the tests exercise the code. [Practical API security testing](/blog/practical-api-security-testing) also belongs here, since an API is only truly testable when it answers requests.
 
-**Release.** Before an artifact is allowed to move toward production, the pipeline should be able to answer three questions: what is inside it, who built it, and has it been tampered with. An SBOM, a software bill of materials, lists every component in the artifact. Artifact signing attests that this exact artifact came from this pipeline. Build provenance records how it was built, which source, which commit, which builder. The SLSA framework gives this a graded structure, so a team can say honestly which level of provenance its builds provide.
+**Release.** Before an artifact is allowed to move toward production, the pipeline should be able to answer three questions: what is inside it, who built it, and has it been tampered with. An SBOM, a software bill of materials, lists every component in the artifact. Artifact signing attests that this exact artifact came from this pipeline. Build provenance records how it was built, which source, which commit, which builder. The [SLSA framework](https://slsa.dev/) gives this a graded structure, so a team can say honestly which level of provenance its builds provide.
 
 **Deploy and operate.** The last checks run where the software actually lives. Admission controllers can refuse to run a container image that is unsigned, unscanned, or built from a disallowed base image. Runtime scanning watches the deployed system for new vulnerabilities in the components it runs, and for behaviour that does not match what the application should do. Monitoring and logging close the loop, because a vulnerability disclosed after deployment still needs to be found, and the pipeline is the fastest way to ship the fix.
 
@@ -50,7 +55,7 @@ SCA reads the dependency tree, so it is good at the question every team forgets 
 
 DAST reads behaviour, so it is good at what the running application actually exposes: an unprotected endpoint, a missing security header, an error page that leaks internals, a session that does not expire. It is limited by coverage: it can only test the parts of the application it can reach, and it cannot see code paths that no request exercises. It also needs a running environment, which makes it slower and later than the build-time checks.
 
-Secrets scanning reads text, so it is good at the most preventable class of leak: a credential pasted into code, a token in a configuration file, a private key in a test fixture. Tools such as Gitleaks and TruffleHog recognise known secret formats, and some can verify whether a detected credential is still live, which keeps false positives low. What secrets scanning cannot do is judge intent, so a clearly fake placeholder in documentation can still be flagged, and the team needs an allowlist process for those.
+Secrets scanning reads text, so it is good at the most preventable class of leak: a credential pasted into code, a token in a configuration file, a private key in a test fixture. Tools such as [Gitleaks](https://github.com/gitleaks/gitleaks) and [TruffleHog](https://github.com/trufflesecurity/trufflehog) recognise known secret formats, and some can verify whether a detected credential is still live, which keeps false positives low. What secrets scanning cannot do is judge intent, so a clearly fake placeholder in documentation can still be flagged, and the team needs an allowlist process for those.
 
 Infrastructure as code scanning reads configuration, so it is good at misconfigurations that no code review would catch, because the code is correct and the deployment is wrong. A firewall rule that is too broad, a database without encryption, a service account with more permissions than it needs. Its weakness is that it only sees the declared configuration, not the drift that happens when someone changes a setting by hand in the console afterwards, which is why runtime checks exist to catch the drift.
 
@@ -60,7 +65,7 @@ When two checks overlap, keep both, but give them different jobs. SAST in the pu
 
 ## Security gates: where a check becomes a decision
 
-A security gate is a checkpoint in the pipeline that decides whether code or an artifact is allowed to proceed, to merge, to be released, or to be deployed, based on security criteria. The OWASP DevSecOps Guideline is clear about the hard part: it is not adding gates, it is designing gates that reduce risk without destroying developer flow. A gate that is too noisy or too strict gets disabled, ignored, or bypassed, and then the team has the worst of both worlds, a pipeline that looks secure and is not.
+A security gate is a checkpoint in the pipeline that decides whether code or an artifact is allowed to proceed, to merge, to be released, or to be deployed, based on security criteria. The [OWASP DevSecOps Guideline on security gates](https://owasp.github.io/DevSecOpsGuideline/2-Process/2-3-Build/2-3-5-Security-Gates/) is clear about the hard part: it is not adding gates, it is designing gates that reduce risk without destroying developer flow. A gate that is too noisy or too strict gets disabled, ignored, or bypassed, and then the team has the worst of both worlds, a pipeline that looks secure and is not.
 
 Good gates follow a few principles. Gate on risk, not on raw counts. A build with fifty low-severity findings in old code is not necessarily more dangerous than a build with one critical finding in a new authentication path. Block on severity, exploitability, and reachability, and let the rest be warnings with an owner and a deadline. Gate only on new findings where the old code is concerned. If the codebase already has a hundred known issues, failing every build on all of them punishes the developer who touched one file, and teaches the team that the gate is unfair. Baseline the existing issues, and hold each change accountable only for the risk it introduces. Make the failure message useful. A gate that says "build failed, 3 high findings" sends the developer on a hunt. A gate that says which file, which line, and what the fix looks like, linked from the pull request, gets the fix made.
 
@@ -132,7 +137,7 @@ In production, an admission controller checks every deployment against policy: t
 </svg>
 </Diagram>
 
-A concrete example of a gate in a GitHub Actions workflow shows how little code this takes. The following is an illustrative workflow fragment, not a copy of a real project file:
+A concrete example of a gate in a GitHub Actions workflow shows how little code this takes. The examples use [Semgrep](https://semgrep.dev/docs/) for SAST and [Trivy](https://trivy.dev/) for the dependency and image scan. The following is an illustrative workflow fragment, not a copy of a real project file:
 
 ```yaml
 name: SAST gate
@@ -237,11 +242,11 @@ That loop is why the pull request is the most valuable place for a check. A deve
 
 A pipeline is infrastructure with the keys to production, so it deserves the same scrutiny as the application it ships. The OWASP DevSecOps Guideline treats securing the pipeline as a first-class concern, and the controls are mostly familiar ones applied to a new target.
 
-Start with access. The pipeline should run with the least privilege it needs, and its credentials should be short-lived and scoped to one job, not long-lived tokens shared across projects. GitHub Actions documents this directly in its security hardening guide: use the minimal permissions for the workflow token, pin third-party actions to a full commit SHA rather than a floating tag, and treat pull requests from forks as untrusted input. The same principle applies on any CI system: a workflow that can read a secret and print it to a log is a vulnerability, not a convenience.
+Start with access. The pipeline should run with the least privilege it needs, and its credentials should be short-lived and scoped to one job, not long-lived tokens shared across projects. The [GitHub Docs security hardening guide for GitHub Actions](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions) states the rule directly: use the minimal permissions for the workflow token, pin third-party actions to a full commit SHA rather than a floating tag, and treat pull requests from forks as untrusted input. The same principle applies on any CI system: a workflow that can read a secret and print it to a log is a vulnerability, not a convenience.
 
 Next, protect the build. A build that fetches dependencies over an unverified channel, or runs a script from a repository it did not check, can be poisoned before the application code is even read. Pin dependencies, verify checksums where the ecosystem supports them, and keep the build environment reproducible, so the same source always produces the same artifact. Signing and provenance then let anyone downstream verify that the artifact they received is the one the pipeline built.
 
-Finally, watch the pipeline the way the pipeline watches the code. Log who changed a workflow, who approved a deployment, and who overrode a gate. Those events are the audit trail for the most sensitive system in the delivery chain, and they are the first place to look when something ships that should not have.
+Finally, watch the pipeline the way the pipeline watches the code. Log who changed a workflow, who approved a deployment, and who overrode a gate. Those events are the audit trail for the most sensitive system in the delivery chain, and they are the first place to look when something ships that should not have. The pipeline is one layer, not the whole defence: a host firewall is another layer in the same stack, as explained in [Understanding Linux firewall rules](/blog/understanding-linux-firewall-rules).
 
 ## Where to start, in order
 
@@ -249,7 +254,7 @@ A team starting from zero does not need every check at once, and trying to add t
 
 First, secrets scanning in pre-commit hooks and in CI, plus SCA in CI. Both have low false positive rates, both catch real and common problems, and both are quick to set up. Second, branch protection and SAST in pull requests, gated on new high and critical findings only. Third, infrastructure as code scanning and container scanning, so the deployment is checked as well as the code. Fourth, DAST or IAST against a staging environment, once a test environment exists. Fifth, SBOM generation, artifact signing, and provenance, which turn a tested build into a verifiable one. Each step is useful on its own, and each one makes the next step easier, because the team is already used to reading findings in the pull request.
 
-A small team can run the first two steps with free tools and an afternoon of configuration. The point is not to buy a platform, it is to make the pipeline answer the question, every time, without a human having to remember to ask it.
+A small team can run the first two steps with free tools and an afternoon of configuration. A small lab machine is a good place to practise them before touching a real pipeline; see [Building a practical Linux security lab](/blog/building-a-practical-linux-security-lab). The point is not to buy a platform, it is to make the pipeline answer the question, every time, without a human having to remember to ask it.
 
 ## What to remember
 
@@ -259,8 +264,12 @@ If you remember one sentence from this article, make it this one: a check that c
 
 ## References
 
-- OWASP DevSecOps Guideline, Introduction and Overview: https://owasp.github.io/DevSecOpsGuideline/
+- [OWASP DevSecOps Guideline](https://owasp.github.io/DevSecOpsGuideline/)
 - [OWASP DevSecOps Guideline, Security Gates](https://owasp.github.io/DevSecOpsGuideline/2-Process/2-3-Build/2-3-5-Security-Gates/)
-- GitHub Docs, Security hardening for GitHub Actions: https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions
-- SLSA, Supply-chain Levels for Software Artifacts: https://slsa.dev/
-- NIST, Secure Software Development Framework (SP 800-218): https://csrc.nist.gov/pubs/sp/800/218/final
+- [GitHub Docs, Security hardening for GitHub Actions](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions)
+- [SLSA, Supply-chain Levels for Software Artifacts](https://slsa.dev/)
+- [NIST, Secure Software Development Framework (SP 800-218)](https://csrc.nist.gov/pubs/sp/800/218/final)
+- [Gitleaks](https://github.com/gitleaks/gitleaks)
+- [TruffleHog](https://github.com/trufflesecurity/trufflehog)
+- [Semgrep documentation](https://semgrep.dev/docs/)
+- [Trivy](https://trivy.dev/)

@@ -3,6 +3,7 @@ title: "Building network reconnaissance automation"
 slug: "building-network-reconnaissance-automation"
 description: "Turning manual recon into a repeatable pipeline, from discovery to port scan to service enumeration to a report a human can act on, with the ethics and scope rules built in."
 date: "2026-11-18"
+updatedAt: "2026-11-20"
 category: "Network Security"
 tags: ["network", "reconnaissance", "automation", "nmap", "scripting"]
 author: "Muhammad Izaz Haider"
@@ -12,7 +13,11 @@ featured: false
 
 Reconnaissance is the part of a security assessment that looks boring from the outside and decides everything on the inside. Before anyone tests a login page, reads a configuration, or thinks about an exploit, someone has to answer simple questions: what is on this network, what is listening, and what software is answering? Done by hand, that work is slow, easy to get wrong, and hard to repeat. Done as a pipeline, it becomes a habit: the same stages, in the same order, with the same outputs, every time, so the results can be compared and checked.
 
-This article builds that pipeline. It starts with the rules that make the work legitimate, then walks through each stage, discovery, port scanning, service enumeration, and reporting, using Nmap as the main tool, and finishes with the scripting that ties the stages together. Every example target in this article is `127.0.0.1`, an RFC 1918 private address, or `scanme.nmap.org`, the host the Nmap project itself provides for light testing. Nothing here is a guide to scanning someone else's network.
+This article builds that pipeline. It starts with the rules that make the work legitimate, then walks through each stage, discovery, port scanning, service enumeration, and reporting, using [Nmap](https://nmap.org/) as the main tool, and finishes with the scripting that ties the stages together. Every example target in this article is `127.0.0.1`, an RFC 1918 private address, or [scanme.nmap.org](https://nmap.org/), the host the Nmap project itself provides for light testing. Nothing here is a guide to scanning someone else's network.
+
+<Callout type="NOTE">
+This article is a build guide, not a log of a single real scan. The commands are standard Nmap commands for a lab pipeline, and every output shown is labelled illustrative rather than copied from a live run.
+</Callout>
 
 ## Why automate recon at all
 
@@ -100,7 +105,7 @@ The scope file is the pipeline's input, and it is deliberately boring. A plain t
 
 The pipeline reads this file and nothing else. It never accepts a target typed at a prompt, and it never scans a range it was not given. That constraint is the whole point: the script cannot scan what the scope file does not name.
 
-Two details matter here. First, the addresses are private. RFC 1918 reserves three blocks for private networks: `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`. These addresses have no meaning on the public internet, which is exactly why they are the right choice for a lab. A lab built on private addresses cannot accidentally reach a real system, because private addresses are not routed across the internet.
+Two details matter here. First, the addresses are private. [RFC 1918](https://www.rfc-editor.org/rfc/rfc1918.html) reserves three blocks for private networks: `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`. These addresses have no meaning on the public internet, which is exactly why they are the right choice for a lab. A lab built on private addresses cannot accidentally reach a real system, because private addresses are not routed across the internet.
 
 Second, the scope file is versioned. It lives in the same folder as the pipeline, it is committed with the scripts, and changes to it are visible in the history. When the scope grows, the reason for the growth is visible too. That audit trail is part of the deliverable, not an extra.
 
@@ -129,7 +134,7 @@ Nmap done: 256 IP addresses (2 hosts up) scanned in 2.41 seconds
 
 Two details in that output deserve attention. The latency is tiny, because these are local lab hosts. On a real network, discovery takes longer, and a host that is up can still be missed if a firewall blocks the discovery probes. A host that does not answer a ping is not necessarily down. It may simply be configured to stay quiet. The pipeline records that uncertainty instead of hiding it: a host that does not answer is listed as "no response", not as "does not exist".
 
-The discovery stage also produces the target list for the next stage. Only hosts that answered are passed to the port scan. That keeps the port scan short and keeps the report honest: every host in the report was confirmed alive first.
+The discovery stage also produces the target list for the next stage. Only hosts that answered are passed to the port scan. That keeps the port scan short and keeps the report honest: every host in the report was confirmed alive first. Discovery on the network side pairs with [DNS enumeration](/blog/exploring-dns-enumeration), which maps the same targets from the name side, starting with the records the target already publishes.
 
 <Callout type="TIP">
 Run discovery with the same timing every time. If you scan a range with aggressive timing one day and gentle timing the next, you cannot tell whether a missing host went down or was simply missed by a faster probe. Consistency is what makes two runs comparable.
@@ -145,9 +150,9 @@ nmap -sS 192.168.20.10 -oA ports-top1000
 
 The `-sS` option is the TCP SYN scan. It sends a SYN packet, the first step of the TCP handshake, and reads the reply. A SYN-ACK reply means the port is open. A RST reply means it is closed. No reply, after retries, means it is filtered, usually by a firewall. Because the scan never completes the handshake, it is fast and it leaves little trace in application logs, though it still appears in network logs. It needs elevated privileges, so it is normally run with `sudo`. Without those privileges, Nmap falls back to a connect scan, `-sT`, which completes the full handshake. The connect scan works everywhere, it is slower, and it is more visible in logs, but logically it answers the same question.
 
-Nmap reports each port in one of four states, and the distinction between them is the first thing a beginner should learn to read properly. The Nmap reference guide defines them plainly: `open` means an application is listening for connections on that port. `closed` means no application is listening, though one could open at any time. `filtered` means a firewall or filter is blocking the probe, so Nmap cannot tell whether the port is open or closed. `unfiltered` means the port responded to probes, but Nmap cannot determine whether it is open or closed. There are also combined states, such as `open|filtered`, for cases where the evidence does not settle the question.
+Nmap reports each port in one of four states, and the distinction between them is the first thing a beginner should learn to read properly. The [Nmap reference guide](https://nmap.org/book/man.html) defines them plainly: `open` means an application is listening for connections on that port. `closed` means no application is listening, though one could open at any time. `filtered` means a firewall or filter is blocking the probe, so Nmap cannot tell whether the port is open or closed. `unfiltered` means the port responded to probes, but Nmap cannot determine whether it is open or closed. There are also combined states, such as `open|filtered`, for cases where the evidence does not settle the question.
 
-That vocabulary matters because each state calls for a different response. An open port you did not expect is a finding. A closed port is normal. A filtered port is a question mark, and the right move is to check the firewall rule, not to assume the port is safe. A report that writes "filtered" as if it meant "closed" is a report that hides uncertainty.
+That vocabulary matters because each state calls for a different response. An open port you did not expect is a finding. A closed port is normal. A filtered port is a question mark, and the right move is to check the [firewall rule](/blog/understanding-linux-firewall-rules), not to assume the port is safe. A report that writes "filtered" as if it meant "closed" is a report that hides uncertainty.
 
 An illustrative port scan result for a lab host:
 
@@ -198,7 +203,7 @@ PORT    STATE SERVICE VERSION
 
 The version numbers are the payload of this stage. They are what the report compares against the expected inventory. If the inventory says the web server should be one version and the scan finds another, that is a finding, and it is a finding that does not need any exploit to be useful.
 
-The `-sC` option runs the default set of Nmap Scripting Engine scripts alongside version detection. The NSE is Nmap's scripting system: small Lua scripts that gather extra information, such as an HTTP page title, SSH host keys, or TLS certificate details. The default set is designed to be safe and informative:
+The `-sC` option runs the default set of [Nmap Scripting Engine](https://nmap.org/book/nse.html) scripts alongside version detection. The NSE is Nmap's scripting system: small Lua scripts that gather extra information, such as an HTTP page title, SSH host keys, or TLS certificate details. The default set is designed to be safe and informative:
 
 ```bash
 nmap -sV -sC -p 22,80,443 \
@@ -275,7 +280,7 @@ The data flow diagram below is the pipeline seen as data, not as steps. Each sta
 </svg>
 </Diagram>
 
-This shape is not specific to network scanning. I use the same pattern in my APK security pipeline: one stage reads a file, does one job, and writes a file the next stage can read. The manifest parser reads the APK and writes a plain element tree. The rule checks read that tree and write findings. The report reads the findings and writes the summary. When a stage is a file in and a file out, each stage can be tested on its own, re-run on its own, and debugged on its own, and the whole pipeline stays understandable. A pipeline that passes data through memory and global state is a pipeline that breaks in ways you cannot reproduce.
+This shape is not specific to network scanning. I use the same pattern in my [APK security pipeline](/blog/writing-my-own-android-binary-xml-parser): one stage reads a file, does one job, and writes a file the next stage can read. The manifest parser reads the APK and writes a plain element tree. The rule checks read that tree and write findings. The report reads the findings and writes the summary. When a stage is a file in and a file out, each stage can be tested on its own, re-run on its own, and debugged on its own, and the whole pipeline stays understandable. A pipeline that passes data through memory and global state is a pipeline that breaks in ways you cannot reproduce.
 
 ## Scripting the pipeline
 
@@ -325,5 +330,6 @@ If you build one thing from this article, build the scope file and the timestamp
 ## References
 
 - Nmap Reference Guide, Chapter 15 of Nmap Network Scanning, host discovery, port scanning techniques, service and version detection, Nmap Scripting Engine, and output formats: https://nmap.org/book/man.html
+- Nmap Scripting Engine (NSE) documentation, the scripting system for gathering extra information from scanned hosts: https://nmap.org/book/nse.html
 - Nmap Project, the scanme.nmap.org test host and the official Nmap download and documentation site: https://nmap.org/
 - RFC 1918, Address Allocation for Private Internets, February 1996, the private address blocks 10.0.0.0/8, 172.16.0.0/12, and 192.168.0.0/16: https://www.rfc-editor.org/rfc/rfc1918.html

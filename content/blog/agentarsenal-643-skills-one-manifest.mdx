@@ -3,6 +3,7 @@ title: "AgentArsenal: 643 skills, one manifest"
 slug: "agentarsenal-643-skills-one-manifest"
 description: "How a collection of 353 skills and 290 sub-skills across 29 domains stays installable, versioned, and trustworthy: one manifest drives the installer, the docs, and the marketplace."
 date: "2026-10-27"
+updatedAt: "2026-11-20"
 category: "AI Tooling"
 tags: ["agentarsenal", "skills", "agents", "automation", "manifest"]
 author: "Muhammad Izaz Haider"
@@ -14,9 +15,13 @@ AgentArsenal is a collection of reusable skills for AI coding agents: procedures
 
 353 top skills plus 290 sub-skills is 643 skill files, across 29 domains. At that size, a folder of markdown files is not a library. It is a pile. The thing that makes it a library is one file: `arsenal-manifest.json`.
 
+<Callout type="NOTE" title="About this article">
+This article is a build log from the author's own AgentArsenal repository, written from the repo as it stood on 26 October 2026. The commands, counts, and scores quoted are the repo's own values, generated from its manifest, not results from a fresh run for this article.
+</Callout>
+
 ## The manifest drives everything
 
-One manifest drives the installer, the docs site, and the Claude Code marketplace integration. Nothing else is the source of truth. The README catalog, the skill count badges, and the marketplace file are all regenerated from it:
+One manifest drives the installer, the docs site, and the [Claude Code marketplace](https://code.claude.com/docs/en/plugins) integration. Nothing else is the source of truth. The README catalog, the skill count badges, and the marketplace file are all regenerated from it. The same generate-from-one-source idea is used in the [PowerShell Academy renderer](/blog/powershell-academy-18-chapters-one-renderer), where one renderer drives 18 chapters:
 
 ```bash
 scripts/derive_manifest.py    # Regenerate arsenal-manifest.json from the repo tree
@@ -25,6 +30,44 @@ scripts/gen_marketplace.py    # Regenerate .claude-plugin/marketplace.json
 ```
 
 If the manifest and the tree disagree, that is a defect, not a difference of opinion. The validator checks manifest consistency as one of its 14 checks, and any failure exits non-zero and fails the build.
+
+<Diagram title="One manifest drives everything" caption="The repo tree feeds the manifest, and the manifest generates the installer inputs, the docs catalog, and the marketplace file. Two gates, validation and scoring, guard every change.">
+<svg viewBox="0 0 720 420" width="100%" role="img" aria-labelledby="agentarsenal-643-skills-one-manifest-d1-title agentarsenal-643-skills-one-manifest-d1-desc">
+<title id="agentarsenal-643-skills-one-manifest-d1-title">One manifest drives the installer, docs, and marketplace</title>
+<desc id="agentarsenal-643-skills-one-manifest-d1-desc">An architecture diagram showing the repository tree feeding arsenal-manifest.json, which generates the installer, the README catalog, and the marketplace file, guarded by validation and scoring gates.</desc>
+<rect x="24" y="154" width="150" height="72" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="99" y="184" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Repo tree</text>
+<text x="99" y="204" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">skills and agents</text>
+<rect x="280" y="154" width="160" height="72" rx="6" fill="var(--surface)" stroke="var(--primary)" strokeWidth="1.5" />
+<text x="360" y="184" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--primary)" fontFamily="var(--font-display), sans-serif">arsenal-manifest.json</text>
+<text x="360" y="204" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">one source of truth</text>
+<rect x="520" y="40" width="176" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="608" y="66" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Installer</text>
+<text x="608" y="86" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">install.sh, sparse</text>
+<rect x="520" y="154" width="176" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="608" y="180" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">README catalog</text>
+<text x="608" y="200" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">badges and skill counts</text>
+<rect x="520" y="268" width="176" height="64" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="608" y="294" textAnchor="middle" fontSize="13" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Marketplace</text>
+<text x="608" y="314" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">marketplace.json</text>
+<rect x="24" y="336" width="330" height="48" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="189" y="358" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Gate 1: validate.py</text>
+<text x="189" y="376" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">14 checks, fails the build</text>
+<rect x="366" y="336" width="330" height="48" rx="6" fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+<text x="531" y="358" textAnchor="middle" fontSize="12" fontWeight="600" fill="var(--text-primary)" fontFamily="var(--font-display), sans-serif">Gate 2: score.py</text>
+<text x="531" y="376" textAnchor="middle" fontSize="11" fill="var(--text-muted)" fontFamily="var(--font-mono), monospace">merge needs 85 or higher</text>
+<line x1="174" y1="190" x2="280" y2="190" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#arsenal-arrow)" />
+<path d="M360,154 V72 H520" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#arsenal-arrow)" />
+<line x1="440" y1="190" x2="520" y2="190" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#arsenal-arrow)" />
+<path d="M360,226 V300 H520" fill="none" stroke="var(--text-secondary)" strokeWidth="1.5" markerEnd="url(#arsenal-arrow)" />
+<line x1="320" y1="226" x2="320" y2="336" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="5,4" markerEnd="url(#arsenal-arrow)" />
+<line x1="400" y1="226" x2="400" y2="336" stroke="var(--text-secondary)" strokeWidth="1.5" strokeDasharray="5,4" markerEnd="url(#arsenal-arrow)" />
+<text x="360" y="410" textAnchor="middle" fontSize="12" fill="var(--text-secondary)" fontFamily="var(--font-display), sans-serif">If the manifest and the tree disagree, that is a defect, not a difference of opinion.</text>
+<defs>
+<marker id="arsenal-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="var(--text-secondary)" /></marker>
+</defs>
+</svg>
+</Diagram>
 
 ## Installing only what you need
 
@@ -48,7 +91,7 @@ The installer is `install.sh`, a sparse installer. It copies chosen skill folder
 
 Run any command with `--dry-run` first to preview exactly what gets copied. Other useful flags: `--list` prints domains with skill counts, `--list-skills` lists available skills with domain and description, `--search <query>` searches by name, domain, or description, `--verify` verifies installed `SKILL.md` files against the manifest sha256 hashes, and `--rollback` restores the most recent backup of the target.
 
-Every skill carries a version, a freshness date, and a lifecycle state. Versions are semver, and a pinned install like `web-sqli@1.0.0` fails on mismatch instead of silently installing something else.
+Every skill carries a version, a freshness date, and a lifecycle state. Versions are [Semantic Versioning](https://semver.org/), and a pinned install like `web-sqli@1.0.0` fails on mismatch instead of silently installing something else.
 
 ## Two gates keep the bar high
 
@@ -71,7 +114,7 @@ That split matters because loading is the cost. An agent that loads one giant sk
 
 ## Offline bundles, for air-gapped machines
 
-`scripts/bundle.py` packs skills into a single portable archive with a manifest, for air-gapped environments. The MCP server is read-only: it serves the skill catalog from `arsenal-manifest.json` and the `skills/` tree and never modifies skill content.
+`scripts/bundle.py` packs skills into a single portable archive with a manifest, for air-gapped environments. The [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server is read-only: it serves the skill catalog from `arsenal-manifest.json` and the `skills/` tree and never modifies skill content.
 
 ## What I would not do again
 
@@ -79,12 +122,15 @@ I would not let counts live in prose. The moment a README says "353 skills" as t
 
 ## Limits, stated plainly
 
-A skill is a procedure, not a guarantee. Scores measure how well a skill is written, versioned, and checked, not whether the procedure it describes is the right one for your job. Freshness dates and lifecycle states need human review; a passing validator does not mean a skill is current. Install only skills you understand, from a manifest you trust, and preview with `--dry-run` before anything is copied.
+A skill is a procedure, not a guarantee. Scores measure how well a skill is written, versioned, and checked, not whether the procedure it describes is the right one for your job. Freshness dates and lifecycle states need human review; a passing validator does not mean a skill is current. Install only skills you understand, from a manifest you trust, and preview with `--dry-run` before anything is copied. Skills that drive agents with tool access carry the same risk described in the [introduction to LLM prompt injection](/blog/an-introduction-to-llm-prompt-injection), and the same least-privilege thinking from the [security considerations for AI-powered applications](/blog/security-considerations-in-ai-powered-applications) applies before you let an agent act on a skill.
 
 ## References
 
-- AgentArsenal repository: https://github.com/mizazhaider-ceh/agent-arsenal
+- AgentArsenal repository: https://github.com/mizazhaider-ceh/AgentArsenal
 - How it works in the repo: `HOW_IT_WORKS.md`
 - Full command reference in the repo: `COMMANDS.md`
 - Specification in the repo: `SPEC.md`
 - Current scores in the repo: `scores.json`
+- Semantic Versioning: https://semver.org/
+- Claude Code plugin marketplace documentation: https://code.claude.com/docs/en/plugins
+- Model Context Protocol: https://modelcontextprotocol.io/

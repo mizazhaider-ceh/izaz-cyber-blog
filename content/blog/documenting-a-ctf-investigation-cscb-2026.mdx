@@ -3,6 +3,7 @@ title: "Documenting a CTF investigation, CSCB 2026"
 slug: "documenting-a-ctf-investigation-cscb-2026"
 description: "How I approach a CTF as an investigation: preparation, method, note-taking, time management, and what the results mean."
 date: "2026-11-18"
+updatedAt: "2026-11-20"
 category: "CTFs"
 tags: ["ctf", "cscb", "writeup", "competition"]
 author: "Muhammad Izaz Haider"
@@ -14,19 +15,23 @@ I treat a CTF the way I treat any investigation: as a set of questions, a method
 
 The results, stated plainly and once, are these: at CSCB 2026 I placed #1 Web Junior, #3 overall Junior, and #26 of 806, earning 26 flags. Those are the facts. The rest of this article is method and reflection. It is not a walkthrough of any challenge, and it does not describe any specific problem, flag, or solution from the event. The method is the part worth writing down, because the method is what I can reuse.
 
+<Callout type="NOTE">
+This article is a method and reflection piece, not a walkthrough and not a log of a live run. It describes how I work through a CTF and what my CSCB 2026 results mean. It contains no challenge detail, no flag, and no solution from the event. The one code sample in it is a generic teaching example, clearly labelled, and not code from the competition.
+</Callout>
+
 ## What a CTF actually is
 
 A capture the flag competition gives you a set of problems, usually grouped by area, and each problem hides a flag, a short string you submit to earn credit. The problems are built to be solved by investigation: something is wrong, something is hidden, or something behaves in a way it should not, and your job is to find out what, and prove it by producing the flag.
 
 That shape is why I like CTFs. They reward the same skills as real security work: reading carefully, forming a theory, testing it, and writing down what you found. The difference is the clock and the scoring, which change the pressure but not the method. A rushed guess can earn a flag, but it teaches nothing. A careful investigation that fails still teaches the method, and the method is what carries over to the next problem, and to real work.
 
-The areas in a typical CTF will be familiar to anyone who reads this blog: web, reverse engineering, binary exploitation, cryptography, forensics, networking, and miscellaneous problems that do not fit anywhere else. My own preparation leans toward the areas I practise most, and the results at CSCB 2026 reflect that. The Web Junior first place tells me where my preparation paid off most clearly. The overall Junior third place tells me the breadth was there too, across more than one area. And 26 flags tells me the method held up across many problems, not just one lucky break.
+The areas in a typical CTF will be familiar to anyone who reads this blog: web, reverse engineering, binary exploitation, cryptography, forensics, [networking](/blog/building-network-reconnaissance-automation), and miscellaneous problems that do not fit anywhere else. My own preparation leans toward the areas I practise most, and the results at CSCB 2026 reflect that. The Web Junior first place tells me where my preparation paid off most clearly. The overall Junior third place tells me the breadth was there too, across more than one area. And 26 flags tells me the method held up across many problems, not just one lucky break.
 
 ## Preparation: the work before the clock starts
 
 Most of a CTF is decided before it begins. The competition itself is execution. Preparation is everything that makes execution possible, and I prepare in three parts: tools, notes, and routine.
 
-**Tools.** I keep a small set of tools I know well, rather than a large set I half know. For me that means Python for quick scripts and parsing, Nmap for network questions, Ghidra for reading binaries, and the standard Linux command line tools for everything in between: `file`, `strings`, `grep`, and a text editor I can use without thinking. I practise with these tools on my own projects, so that during a competition I am thinking about the problem, not about the tool. A new tool learned the night before a competition is a tool that will waste your time when the clock is running.
+**Tools.** I keep a small set of tools I know well, rather than a large set I half know. For me that means [Python](https://www.python.org/) for quick scripts and parsing, [Nmap](https://nmap.org/) for network questions, [Ghidra](https://ghidra-sre.org/) for reading binaries, and the standard Linux command line tools for everything in between: `file`, `strings`, `grep`, and a text editor I can use without thinking. I practise with these tools on my own projects, so that during a competition I am thinking about the problem, not about the tool. A new tool learned the night before a competition is a tool that will waste your time when the clock is running.
 
 I also keep my environment ready. The tools are installed, the scripts I reuse are in one folder, and I know where everything lives. Setting up an environment during a competition is time spent not solving problems, and it is the easiest time to save, because it can all be done the day before.
 
@@ -77,7 +82,7 @@ My method for a single problem is a loop with four steps: enumerate, hypothesize
 
 **Enumerate.** The first step is to look at everything the problem gives you, and write it down, before forming any theory. What files are provided? What services are reachable? What does the problem statement actually say, word for word? Enumeration is deliberately boring. It is a list, not an idea. The reason it comes first is that most wrong theories come from skipping it: assuming a file exists that does not, or missing a detail the problem stated plainly.
 
-For a web problem, enumeration means reading the pages, looking at the requests the browser makes, and noting what the application offers. For a binary, it means the triage I describe in my reverse engineering article: format, strings, and the first hints about behaviour. For a file, it means looking at its type, its size, and its structure before assuming what is inside. The shape changes. The discipline does not: list first, theorise second.
+For a web problem, enumeration means reading the pages, looking at the requests the browser makes, and noting what the application offers. For a binary, it means the triage I describe in my [reverse engineering article](/blog/exploring-reverse-engineering-fundamentals): format, strings, and the first hints about behaviour. For a file, it means looking at its type, its size, and its structure before assuming what is inside. The shape changes. The discipline does not: list first, theorise second.
 
 **Hypothesize.** Once I have the list, I form a theory: a short sentence about where the flag is and why. "The flag is in a file the application lets me read through this parameter." "The check compares my input against a value stored in the binary." A good theory is specific enough to be wrong. A vague theory, like "something is wrong with the login", cannot be tested, because any result fits it. A specific theory can fail, and a failed theory is useful, because it rules something out.
 
@@ -103,6 +108,45 @@ The notes serve a second purpose after the event: they are the writeup. A good s
 If you remember one rule from this article, make it this one: write down every failed test. Failed tests are the map of where the flag is not, and a map of where it is not is what narrows the search to where it is.
 </Callout>
 
+## A small example: summarising a scoreboard file
+
+Good notes turn into small tools. The snippet below is a generic teaching example, not code from CSCB 2026 and not a record of anything from the event. It shows the kind of tiny script I keep beside my notes: it reads a small JSON file shaped like a scoreboard export and prints a sorted summary, using only the Python standard library.
+
+```python
+# scoreboard_summary.py, a generic teaching example.
+# It is not code from CSCB 2026. It reads a small JSON file
+# shaped like a scoreboard export and prints a sorted summary.
+import json
+
+with open("scoreboard.json", encoding="utf-8") as handle:
+    entries = json.load(handle)
+
+rows = sorted(entries, key=lambda entry: entry["flags"], reverse=True)
+for position, entry in enumerate(rows, start=1):
+    print(f"{position}. {entry['team']}: {entry['flags']} flags")
+```
+
+With an example input file of three made-up teams:
+
+```json
+[
+  {"team": "Example Team A", "flags": 14},
+  {"team": "Example Team B", "flags": 9},
+  {"team": "Example Team C", "flags": 5}
+]
+```
+
+It prints:
+
+```text
+Illustrative output:
+1. Example Team A: 14 flags
+2. Example Team B: 9 flags
+3. Example Team C: 5 flags
+```
+
+The point is not the script. The point is the habit: notes in a fixed shape, a tiny tool that reads them, and a summary you can trust because the input is written down.
+
 ## Time management: choosing what not to solve
 
 Time is the one resource a competition does not give back, and managing it is a skill of its own. My approach is simple, and it has three parts: triage first, timebox everything, and know when to stop.
@@ -119,7 +163,7 @@ I also plan breaks. A tired mind repeats failed tests and misses plain details, 
 
 A placement is a measurement, and like any measurement it needs to be read carefully. Here is how I read mine from CSCB 2026.
 
-**#1 Web Junior** tells me where my preparation was strongest. Web is the area I practise most, through my own lab work and through the web security writing on this blog, and the result reflects that investment. It tells me my method for web problems, enumerate the application, form a specific theory, test small, is working. It also tells me where to keep investing, because a strength kept sharp stays a strength, and a strength neglected fades.
+**#1 Web Junior** tells me where my preparation was strongest. Web is the area I practise most, through my own lab work and through the [web security writing on this blog](/blog/analyzing-insecure-authentication), and the result reflects that investment. It tells me my method for web problems, enumerate the application, form a specific theory, test small, is working. It also tells me where to keep investing, because a strength kept sharp stays a strength, and a strength neglected fades.
 
 **#3 overall Junior** tells me the work was not narrow. A single strong area can carry a category placement, but an overall placement needs breadth, and breadth means the loop worked across different kinds of problems, not just the ones I like most. That matters to me more than the category placement, because real security work is broad, and a method that only works on one kind of problem is a method with a short future.
 
@@ -170,4 +214,8 @@ My results at CSCB 2026, #1 Web Junior, #3 overall Junior, #26 of 806, with 26 f
 
 ## References
 
-No external sources are cited for this article. The results stated here, CSCB 2026, #1 Web Junior, #3 overall Junior, #26 of 806, and 26 flags earned, are my own verified results from the event. The method described is my own practice, and no challenge, flag, or solution from the event is described.
+- Python, the Python programming language, used here for quick scripts and parsing: https://www.python.org/
+- Nmap, network discovery and security auditing, used here for network questions: https://nmap.org/
+- Ghidra, a software reverse engineering framework from the National Security Agency, used here for reading binaries: https://ghidra-sre.org/
+
+The results stated here, CSCB 2026, #1 Web Junior, #3 overall Junior, #26 of 806, and 26 flags earned, are my own verified results from the event. The method described is my own practice, and no challenge, flag, or solution from the event is described.

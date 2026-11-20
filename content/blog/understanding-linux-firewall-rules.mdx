@@ -3,6 +3,7 @@ title: "Understanding Linux firewall rules"
 slug: "understanding-linux-firewall-rules"
 description: "How a packet actually travels through nftables and iptables chains, how to read and write rules that do what you mean, and the mistakes that leave a door open."
 date: "2026-11-18"
+updatedAt: "2026-11-20"
 category: "Linux"
 tags: ["linux", "firewall", "nftables", "iptables", "networking"]
 author: "Muhammad Izaz Haider"
@@ -14,18 +15,22 @@ A firewall rule is a sentence about a packet: if it looks like this, do that. Th
 
 This article explains how a packet actually travels through the Linux firewall, in nftables first and iptables second, how to read and write rules that do what you mean, and which mistakes leave a door open. The commands are standard, verifiable commands, checked against the nftables wiki and the man pages, and the outputs are labelled illustrative where they are shown. Nothing here was presented as tested on a production machine, and the rules are minimal examples for a lab, not a copy and paste configuration for a server you care about.
 
+<Callout type="NOTE">
+About this article: this is an explainer based on the sources listed in References. It is not a hands-on build log. No firewall rules were run on a live machine for this article, and every output shown is labelled illustrative.
+</Callout>
+
 ## The one idea: hooks in the packet path
 
 Linux filtering is built on Netfilter, a framework inside the kernel that lets code inspect packets at fixed points in their journey. Those fixed points are called hooks. A packet travelling through the system passes a sequence of hooks, and at each hook, the firewall can decide to accept it, drop it, or pass it on to the next stage. The chains you write are attached to those hooks. A chain is simply an ordered list of rules that runs when a packet reaches its hook.
 
-The nftables wiki lists the hooks, and each one has a plain meaning. Prerouting sees all incoming packets, before any routing decision has been made, so at that point the system does not yet know whether the packet is addressed to itself or to another machine. Input sees incoming packets that have been routed to the local system, for a process running here. Forward sees incoming packets that are not addressed to the local system, and that will be sent on to another machine, which only matters if the system is acting as a router. Output sees packets that originated from processes on the local machine. Postrouting sees all packets after routing, just before they leave the local system. There is also an ingress hook, available in the netdev family and, since kernel 5.10, in the inet family, which sees packets immediately after they are passed up from the network card, before even prerouting.
+The [nftables wiki](https://wiki.nftables.org/wiki-nftables/index.php/Configuring_chains) lists the hooks, and each one has a plain meaning. Prerouting sees all incoming packets, before any routing decision has been made, so at that point the system does not yet know whether the packet is addressed to itself or to another machine. Input sees incoming packets that have been routed to the local system, for a process running here. Forward sees incoming packets that are not addressed to the local system, and that will be sent on to another machine, which only matters if the system is acting as a router. Output sees packets that originated from processes on the local machine. Postrouting sees all packets after routing, just before they leave the local system. There is also an ingress hook, available in the netdev family and, since kernel 5.10, in the inet family, which sees packets immediately after they are passed up from the network card, before even prerouting.
 
 That list is the whole map. If you know which hook a packet reaches, you know which chain can see it. If you put a rule in the input chain and the packet is being forwarded, the rule never runs. If you put a rule in the output chain and the packet is arriving from the network, the rule never runs. Most firewall confusion is a confusion about which hook a packet is at, and the diagram in the next section is the picture to keep in your head.
 
 There are three chain types in nftables: filter, which decides whether a packet may pass; nat, which rewrites addresses or ports; and route, which changes routing decisions. This article is about filter chains, because filtering is the job most people mean when they say firewall. NAT is mentioned where it changes which chain sees what, and otherwise left alone.
 
 <Callout type="NOTE">
-nftables is the successor to iptables. The nftables framework replaces iptables, ip6tables, arptables, ebtables, and ipset, and the nft tool replaces the older tools. Many systems still run iptables rules through the iptables-nft compatibility layer, which translates them into the same kernel infrastructure, so the two syntaxes describe the same hooks. Learn nftables for new work, and read iptables because you will meet it in existing systems, tutorials, and exam material for years to come.
+nftables is the successor to iptables. The [nftables framework](https://wiki.nftables.org/wiki-nftables/index.php/Quick_reference-nftables_in_10_minutes) replaces iptables, ip6tables, arptables, ebtables, and ipset, and the nft tool replaces the older tools. Many systems still run iptables rules through the iptables-nft compatibility layer, which translates them into the same kernel infrastructure, so the two syntaxes describe the same hooks. Learn nftables for new work, and read iptables because you will meet it in existing systems, tutorials, and exam material for years to come.
 </Callout>
 
 ## The packet path, step by step
@@ -91,9 +96,9 @@ The routing decision sits between prerouting and the input and forward hooks, an
 
 ## nftables: tables, chains, rules
 
-In nftables, there are no predefined chains. You create a table, you register base chains in it, and then you add rules to those chains. A table is a namespace that holds chains, rules, sets, and other objects. A base chain is a chain registered at one of the Netfilter hooks, so it sees packets flowing through the stack. A regular chain, by contrast, is only reached when another chain jumps to it, which is how you organise a large ruleset into named sections.
+In nftables, there are no predefined chains. You create a table, you register base chains in it, and then you add rules to those chains. A table is a namespace that holds chains, rules, sets, and other objects. A base chain is a chain registered at one of the Netfilter hooks, so it sees packets flowing through the stack. The [nftables manual page](https://www.netfilter.org/projects/nftables/manpage.html) documents the nft tool and its syntax. A regular chain, by contrast, is only reached when another chain jumps to it, which is how you organise a large ruleset into named sections.
 
-The nftables wiki gives the shape of the command to register a base chain:
+The [nftables wiki](https://wiki.nftables.org/wiki-nftables/index.php/Configuring_chains) gives the shape of the command to register a base chain:
 
 ```bash
 nft add chain inet filter input { type filter hook input priority 0 \; policy drop \; }
@@ -135,7 +140,7 @@ nft list ruleset
 
 The first command checks the file without changing anything. The second loads it. The third shows what is now running. The check step matters because nftables loads a file as one atomic transaction: either the whole ruleset applies, or none of it does. That is a real improvement over the older tools, where a script could fail halfway and leave a half applied ruleset behind. Use the check, and keep the file in version control, because the file is the firewall, and the running ruleset is only a copy of it.
 
-Managing individual rules follows the same pattern the wiki documents. Add a rule to a chain:
+Managing individual rules follows the same pattern the [nftables wiki](https://wiki.nftables.org/wiki-nftables/index.php/Simple_rule_management) documents. Add a rule to a chain:
 
 ```bash
 nft add rule inet filter input tcp dport 8080 accept
@@ -172,7 +177,7 @@ The handle is assigned by the kernel and uniquely identifies the rule, so deleti
 
 ## iptables: the older syntax, the same hooks
 
-The iptables syntax is older, and it is the one most tutorials still use. The concepts are identical: tables, chains, rules, a first match wins, and a policy for the end of a chain. The differences are in the defaults and the shape of the commands.
+The iptables syntax is older, and it is the one most tutorials still use. The [iptables manual page](https://man7.org/linux/man-pages/man8/iptables.8.html) documents the commands below. The concepts are identical: tables, chains, rules, a first match wins, and a policy for the end of a chain. The differences are in the defaults and the shape of the commands.
 
 iptables comes with predefined chains, INPUT, OUTPUT, and FORWARD among them, so there is no step where you register a chain at a hook. You append a rule to a chain with `-A`, insert one at a position with `-I`, list the rules with `-L`, and set the policy with `-P`. The same minimal ruleset as above, in iptables form, looks like this:
 
@@ -187,7 +192,7 @@ iptables -A INPUT -p tcp --dport 80 -j ACCEPT
 iptables -A INPUT -p tcp --dport 443 -j ACCEPT
 ```
 
-The verdicts are worth naming, because they are the same in both tools. `accept` lets the packet continue. `drop` discards it silently, so the sender gets no reply and must wait for a timeout. `reject` discards it and sends back an error, usually an ICMP message, so the sender learns immediately that the connection was refused. Drop is quieter and slower for an attacker to scan, because a scanner must wait for each timeout, but reject is friendlier for legitimate users, because a mistyped address fails fast instead of hanging. There is no universally right choice. A common pattern is to reject on a LAN, where the users are your own and a fast error helps them, and to drop on a public interface, where the audience includes scanners.
+The verdicts are worth naming, because they are the same in both tools. `accept` lets the packet continue. `drop` discards it silently, so the sender gets no reply and must wait for a timeout. `reject` discards it and sends back an error, usually an ICMP message, so the sender learns immediately that the connection was refused. Drop is quieter and slower for an attacker to scan, because a scanner must wait for each timeout, but reject is friendlier for legitimate users, because a mistyped address fails fast instead of hanging. How a scanner sees that difference is covered in [Building network reconnaissance automation](/blog/building-network-reconnaissance-automation). There is no universally right choice. A common pattern is to reject on a LAN, where the users are your own and a fast error helps them, and to drop on a public interface, where the audience includes scanners.
 
 ```bash
 iptables -L -n -v --line-numbers
@@ -249,7 +254,7 @@ When you inherit a ruleset, do not start by adding rules. Start by listing it, w
 
 ## Defense in depth: the firewall is one layer
 
-A host firewall is one layer of defense, and it is a mistake to treat it as the only one. A service that listens on all interfaces is exposed to every network the machine touches, and a firewall rule is the only thing standing between it and the internet. A service that binds to localhost only is not reachable from the network at all, and the firewall is a second layer behind that choice. A service that requires authentication is protected even if the firewall lets the traffic through, and the firewall is a second layer behind that too.
+A host firewall is one layer of defense, and it is a mistake to treat it as the only one. A service that listens on all interfaces is exposed to every network the machine touches, and a firewall rule is the only thing standing between it and the internet. A service that binds to localhost only is not reachable from the network at all, and the firewall is a second layer behind that choice. A service that requires authentication is protected even if the firewall lets the traffic through, and the firewall is a second layer behind that too. That layering is the same idea behind pipeline security gates; see [Understanding DevSecOps pipelines](/blog/understanding-devsecops-pipelines).
 
 The layer stack, from the outside in, looks like this: the network firewall at the perimeter, the host firewall on the machine, the service binding, which decides which interfaces the service listens on, and the application authentication, which decides who may use it. Each layer catches what the previous one missed. A mistake in one layer is survivable if the next layer holds. A system with only one layer has no margin at all.
 
@@ -278,7 +283,7 @@ That stack is also the answer to the question of what to fix first when time is 
 
 ## A safe way to practice
 
-The only safe place to practice firewall rules is a lab machine you can afford to break. A virtual machine with two network interfaces, one host only and one internal, is enough: one interface to reach it from your own machine, and one to test what the firewall does to traffic between machines. Take a snapshot before you start, so that a mistake costs a restore, not a rebuild.
+The only safe place to practice firewall rules is a lab machine you can afford to break. A virtual machine with two network interfaces, one host only and one internal, is enough: one interface to reach it from your own machine, and one to test what the firewall does to traffic between machines. Take a snapshot before you start, so that a mistake costs a restore, not a rebuild. For how to set up that lab machine, see [Building a practical Linux security lab](/blog/building-a-practical-linux-security-lab).
 
 ## What to remember
 
