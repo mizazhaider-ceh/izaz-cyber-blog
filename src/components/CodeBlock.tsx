@@ -24,6 +24,20 @@ export function CodeBlock({ code, language, children }: CodeBlockProps) {
   const [copied, setCopied] = useState(false);
   const cleanCode = code.replace(/\n$/, "");
   const lineCount = cleanCode.split("\n").length;
+  // Audit item 20: each copy button names the block it copies, so a
+  // screen reader can tell seventeen "Copy" buttons apart. The visible
+  // text stays "Copy" / "Copied", and the accessible name includes it
+  // exactly, plus the language when one is known.
+  const languageLabel = language
+    ? language.charAt(0).toUpperCase() + language.slice(1)
+    : null;
+  const copyLabel = copied
+    ? languageLabel
+      ? `Copied ${languageLabel} code`
+      : "Copied"
+    : languageLabel
+      ? `Copy ${languageLabel} code`
+      : "Copy code";
 
   async function copyCode() {
     try {
@@ -44,8 +58,8 @@ export function CodeBlock({ code, language, children }: CodeBlockProps) {
         <button
           type="button"
           onClick={copyCode}
-          aria-label={copied ? "Copied" : "Copy code"}
-          className="inline-flex items-center gap-2 rounded-md px-2 py-1 font-mono text-xs text-[#e8e6df] transition-colors hover:bg-[#2a2825] focus-visible:outline-2 focus-visible:outline-[#4385be]"
+          aria-label={copyLabel}
+          className="inline-flex min-h-6 items-center gap-2 rounded-md px-3 py-1.5 font-mono text-xs text-[#e8e6df] transition-colors hover:bg-[#2a2825] focus-visible:outline-2 focus-visible:outline-[#4385be]"
         >
           {copied ? (
             <Check className="h-4 w-4 text-[#a5d6a7]" aria-hidden="true" />
@@ -54,6 +68,9 @@ export function CodeBlock({ code, language, children }: CodeBlockProps) {
           )}
           {copied ? "Copied" : "Copy"}
         </button>
+        <span role="status" className="sr-only">
+          {copied ? "Copied" : ""}
+        </span>
       </div>
       <div className="flex">
         <div
