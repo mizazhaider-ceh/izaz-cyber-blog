@@ -26,6 +26,17 @@ const ThemeContext = createContext<ThemeContextValue>({
   toggleTheme: () => {},
 });
 
+function resolveSystemTheme(): Theme {
+  try {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  } catch {
+    // matchMedia unavailable: fall back to light.
+    return "light";
+  }
+}
+
 function readStoredTheme(): Theme {
   try {
     const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -33,9 +44,10 @@ function readStoredTheme(): Theme {
       return stored;
     }
   } catch {
-    // Storage unavailable (private mode, blocked cookies): fall through to light.
+    // Storage unavailable (private mode, blocked cookies): fall through
+    // to the OS preference.
   }
-  return "light";
+  return resolveSystemTheme();
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -45,9 +57,27 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Sync React state with the value the pre-paint script already applied.
   // The visible theme never flashes: the script in layout.tsx sets
   // data-theme before first paint, this only aligns the toggle icon.
+  // Also follow OS preference changes while no value is stored; a
+  // stored value always wins, so the toggle behaviour is unchanged.
   useEffect(() => {
     setTheme(readStoredTheme());
     setMounted(true);
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const onSystemChange = () => {
+      let stored: string | null = null;
+      try {
+        stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+      } catch {
+        // Storage unavailable: treat as no stored value.
+      }
+      if (stored !== "dark" && stored !== "light") {
+        const next: Theme = media.matches ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", next);
+        setTheme(next);
+      }
+    };
+    media.addEventListener("change", onSystemChange);
+    return () => media.removeEventListener("change", onSystemChange);
   }, []);
 
   const toggleTheme = useCallback(() => {

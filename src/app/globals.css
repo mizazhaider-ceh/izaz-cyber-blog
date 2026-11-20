@@ -17,7 +17,7 @@
   --text-primary: #100f0f;
   --text-secondary: #222222;
   --text-muted: #6f6e69;
-  --text-subtle: #878580;
+  --text-subtle: #73726e;
   --primary: #af3029;
   --primary-hover: #de594c;
   --secondary: #205ea6;
@@ -91,12 +91,16 @@
 @layer base {
   html {
     scroll-behavior: smooth;
+    /* Tell the browser both schemes are supported so native UI
+     * (scrollbars, form controls, canvas background) follows the theme. */
+    color-scheme: light dark;
   }
 
   body {
     background-color: var(--background);
     color: var(--text-primary);
     font-family: var(--font-body), system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size-adjust: from-font;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
@@ -120,6 +124,15 @@
     outline: 2px solid var(--secondary);
     outline-offset: 2px;
     border-radius: 4px;
+  }
+
+  /*
+   * Long URLs in article links must wrap instead of overflowing the
+   * column on small screens. Without this, a 360px URL in a 342px
+   * column pushes the whole page 24px wider at 390px.
+   */
+  article a {
+    overflow-wrap: anywhere;
   }
 
   /*
@@ -231,13 +244,117 @@
   background-color: #67060c;
 }
 
+/*
+ * Reduced motion (audit item 22). No global animation-duration hack:
+ * the motion guide forbids it, because a near-zero duration can make
+ * animations more jarring. The site has only two real motions, handled
+ * case by case. The particles canvas is already static under reduced
+ * motion (it draws once and never animates, see
+ * src/components/Particles.tsx), and every transition in src/ is
+ * colour-only hover and focus feedback, which the guide says to keep
+ * enabled. Nothing here hides content: no element starts at opacity 0
+ * or depends on an animation reaching its end state.
+ */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Reading progress bar (audit item 30). Thin fixed bar at the top of
+ * article pages, driven by a CSS scroll timeline. The bar starts at
+ * scaleX(0); browsers without scroll-timeline support get their scaleX
+ * from the ReadingProgress component fallback instead. No
+ * scroll-timeline polyfill. The bar uses the site accent (--primary),
+ * never intercepts pointer events, and is hidden for reduced motion. */
+.reading-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 50;
+  width: 100%;
+  height: 4px;
+  background: var(--primary);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  pointer-events: none;
+}
+
+@supports ((animation-timeline: scroll())) {
+  @keyframes reading-progress-grow {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  .reading-progress {
+    animation: reading-progress-grow auto linear;
+    animation-timeline: scroll();
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reading-progress {
+    animation: none;
+    display: none;
+  }
+}
+
+/*
+ * Print stylesheet (audit item 35).
+ * A printed article is the article only: no site chrome, no search
+ * palette, no share buttons, no table of contents, no progress bar.
+ * Colours flatten to black on white so no ink is wasted on dark
+ * surfaces, and code blocks unwrap instead of clipping.
+ */
+@media print {
+  header,
+  footer,
+  canvas,
+  nav[aria-label="Table of contents"],
+  nav[aria-label="Previous and next articles"],
+  section[aria-labelledby="related-writing"],
+  .share-buttons,
+  .reading-progress,
+  [role="dialog"][aria-label="Search"] {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  a {
+    color: #000000 !important;
+    text-decoration: underline;
+  }
+
+  pre,
+  pre code,
+  :not(pre) > code {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border-color: #999999;
+  }
+
+  pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  pre,
+  figure,
+  img {
+    break-inside: avoid;
   }
 }

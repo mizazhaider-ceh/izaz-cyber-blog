@@ -1,17 +1,25 @@
 import type { Metadata } from "next";
+import { openGraphSite, rssFeedAlternate, twitterCard } from "@/lib/metadata";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Privacy",
-  description: "What this site collects, which is nothing beyond a saved theme preference.",
+  description: "What this site collects: cookieless page views and Web Vitals, plus a saved theme preference.",
   alternates: {
     canonical: "/privacy",
+    ...rssFeedAlternate,
   },
   openGraph: {
+    ...openGraphSite,
     type: "website",
     url: `${site.url}/privacy`,
     title: `Privacy | ${site.brand}`,
-    description: "What this site collects, which is nothing beyond a saved theme preference.",
+    description: "What this site collects: cookieless page views and Web Vitals, plus a saved theme preference.",
+  },
+  twitter: {
+    ...twitterCard,
+    title: `Privacy | ${site.brand}`,
+    description: "What this site collects: cookieless page views and Web Vitals, plus a saved theme preference.",
   },
 };
 
@@ -23,8 +31,25 @@ export default function PrivacyPage() {
       </h1>
       <div className="mt-12 space-y-6 text-base leading-8 text-text-secondary">
         <p>
-          This site does not track you. There is no analytics, no advertising, no tracking pixel,
-          and no third party script collecting your behaviour.
+          This site uses two cookieless analytics tools from Vercel, Web Analytics and Speed
+          Insights. Web Analytics counts page views so I can see which articles people read.
+          Speed Insights measures Core Web Vitals, the load time, responsiveness and layout
+          stability of each page, so I can see which pages are slow and fix them. Neither tool
+          sets a cookie, and neither collects personal data.
+        </p>
+        <p>
+          <strong className="text-text-primary">What I will not do.</strong> No session replay,
+          no cross-site tracking, no fingerprinting, and no personal data in analytics. Vercel
+          Analytics hashes your IP address and discards it, so visits cannot be tied back to
+          you. There is no advertising, no tracking pixel, and no third party script collecting
+          your behaviour.
+        </p>
+        <p>
+          <strong className="text-text-primary">Opting out.</strong> There is no opt-out to
+          switch on, because there is nothing to opt out of: the analytics above is cookieless
+          and collects no personal data. If you still prefer not to be counted, your
+          browser&apos;s tracking protection or a content blocker will block the analytics
+          requests.
         </p>
         <p>
           The only thing stored in your browser is your theme preference, light or dark, saved in

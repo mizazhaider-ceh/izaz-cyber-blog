@@ -4,9 +4,14 @@ import { notFound } from "next/navigation";
 import { getAllPosts, getPostBySlug } from "@/lib/content";
 import { formatDate, slugify } from "@/lib/format";
 import { articleJsonLd, jsonLdScript } from "@/lib/jsonld";
+import { openGraphSite, rssFeedAlternate, twitterCard } from "@/lib/metadata";
 import { site } from "@/lib/site";
 import { ArticleRow } from "@/components/ArticleRow";
+import { FeedbackBox } from "@/components/FeedbackBox";
 import { MdxContent } from "@/components/MdxContent";
+import { ReadingProgress } from "@/components/ReadingProgress";
+import { SeriesNav } from "@/components/SeriesNav";
+import { ShareButtons } from "@/components/ShareButtons";
 import { TableOfContents, type TocHeading } from "@/components/TableOfContents";
 
 export async function generateStaticParams() {
@@ -21,7 +26,7 @@ export async function generateMetadata({
   const { slug } = await params;
   const post = getPostBySlug(slug);
   if (!post) {
-    return { title: "Article not found" };
+    return { title: "Article not found", alternates: { ...rssFeedAlternate } };
   }
   const fm = post.frontmatter;
   const url = `${site.url}/blog/${fm.slug}`;
@@ -31,8 +36,10 @@ export async function generateMetadata({
     authors: [{ name: fm.author, url: site.url }],
     alternates: {
       canonical: `/blog/${fm.slug}`,
+      ...rssFeedAlternate,
     },
     openGraph: {
+      ...openGraphSite,
       type: "article",
       url,
       title: `${fm.title} | ${site.brand}`,
@@ -41,11 +48,21 @@ export async function generateMetadata({
       publishedTime: fm.date,
       modifiedTime: fm.updatedAt ?? fm.date,
       tags: fm.tags,
+      images: [
+        {
+          url: `${site.url}/og/${fm.slug}.png`,
+          width: 1200,
+          height: 630,
+          alt: fm.title,
+        },
+      ],
     },
     twitter: {
-      card: "summary",
+      ...twitterCard,
+      card: "summary_large_image",
       title: `${fm.title} | ${site.brand}`,
       description: fm.description,
+      images: [`${site.url}/og/${fm.slug}.png`],
     },
   };
 }
@@ -92,11 +109,12 @@ export default async function ArticlePage({
 
   return (
     <div className="mx-auto max-w-[1140px] px-6 py-16 md:py-24">
+      <ReadingProgress />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdScript(articleJsonLd(post)) }}
       />
-      <article className="mx-auto max-w-[760px]">
+      <article className="mx-auto max-w-[68ch]">
         <nav aria-label="Breadcrumb" className="font-mono text-xs text-text-muted">
           <Link href="/" className="transition-colors hover:text-primary">
             Home
@@ -133,6 +151,8 @@ export default async function ArticlePage({
           <span>{fm.readingTime} min read</span>
         </div>
 
+        <SeriesNav slug={fm.slug} />
+
         <TableOfContents headings={headings} />
 
         <MdxContent source={post.content} />
@@ -149,9 +169,15 @@ export default async function ArticlePage({
           ))}
         </div>
 
+        <ShareButtons url={`${site.url}/blog/${fm.slug}`} title={fm.title} />
+
         <p className="mt-12 border-t border-border pt-8 font-mono text-xs text-text-muted">
           {post.wordCount} words. Published {formatDate(fm.date)}
-          {fm.updatedAt ? `, updated ${formatDate(fm.updatedAt)}` : ""}. Written by {fm.author}.
+          {fm.updatedAt ? `, updated ${formatDate(fm.updatedAt)}` : ""}. Written by{" "}
+          <Link href="/about" className="text-text-secondary underline underline-offset-4 transition-colors hover:text-primary">
+            {fm.author}
+          </Link>
+          .
         </p>
       </article>
 
@@ -206,6 +232,7 @@ export default async function ArticlePage({
           </ul>
         </section>
       )}
+      <FeedbackBox slug={fm.slug} title={fm.title} />
     </div>
   );
 }

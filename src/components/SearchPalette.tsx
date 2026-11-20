@@ -107,7 +107,7 @@ export function SearchPalette({ items }: { items: SearchItem[] }) {
                 aria-activedescendant={
                   results[activeIndex] ? `search-result-${activeIndex}` : undefined
                 }
-                className="w-full bg-transparent text-base text-text-primary outline-none placeholder:text-text-muted"
+                className="w-full bg-transparent text-base text-text-primary outline-none placeholder:text-text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
               />
               <button
                 type="button"

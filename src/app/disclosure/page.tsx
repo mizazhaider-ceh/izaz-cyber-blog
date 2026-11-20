@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { openGraphSite, rssFeedAlternate, twitterCard } from "@/lib/metadata";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -8,10 +9,18 @@ export const metadata: Metadata = {
     "How to report a security issue responsibly, and what I ask of anyone testing systems.",
   alternates: {
     canonical: "/disclosure",
+    ...rssFeedAlternate,
   },
   openGraph: {
+    ...openGraphSite,
     type: "website",
     url: `${site.url}/disclosure`,
+    title: `Responsible Disclosure | ${site.brand}`,
+    description:
+      "How to report a security issue responsibly, and what I ask of anyone testing systems.",
+  },
+  twitter: {
+    ...twitterCard,
     title: `Responsible Disclosure | ${site.brand}`,
     description:
       "How to report a security issue responsibly, and what I ask of anyone testing systems.",

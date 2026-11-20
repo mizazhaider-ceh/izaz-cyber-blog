@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { jsonLdScript, personJsonLd } from "@/lib/jsonld";
+import { openGraphSite, rssFeedAlternate, twitterCard } from "@/lib/metadata";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -9,25 +10,37 @@ export const metadata: Metadata = {
     "About Muhammad Izaz Haider: security researcher, builder, and writer on cybersecurity, AI security, and engineering.",
   alternates: {
     canonical: "/about",
+    ...rssFeedAlternate,
   },
   openGraph: {
+    ...openGraphSite,
     type: "profile",
     url: `${site.url}/about`,
     title: `About Me | ${site.brand}`,
     description:
       "About Muhammad Izaz Haider: security researcher, builder, and writer on cybersecurity, AI security, and engineering.",
+    images: [
+      {
+        url: `${site.url}/og/default.png`,
+        width: 1200,
+        height: 630,
+        alt: `About Me | ${site.brand}`,
+      },
+    ],
   },
   twitter: {
-    card: "summary",
+    ...twitterCard,
+    card: "summary_large_image",
     title: `About Me | ${site.brand}`,
     description:
       "About Muhammad Izaz Haider: security researcher, builder, and writer on cybersecurity, AI security, and engineering.",
+    images: [`${site.url}/og/default.png`],
   },
 };
 
 export default function About() {
   return (
-    <div className="mx-auto max-w-[720px] px-6 py-16 md:py-24">
+    <div className="mx-auto max-w-[68ch] px-6 py-16 md:py-24">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: jsonLdScript(personJsonLd()) }}
@@ -36,16 +49,29 @@ export default function About() {
         About Me
       </h1>
 
+      {/* About image: character portrait by Vinur. on Pexels (Pexels License, free to use). Source: https://www.pexels.com/photo/moody-portrait-of-a-person-in-deep-thought-33138368/ . Not a photo of the author. Full record in docs/ABOUT-IMAGE.md. */}
       <figure className="mx-auto mt-12 w-fit text-center">
-        <div
-          role="img"
-          aria-label="Portrait placeholder"
-          className="flex h-48 w-48 items-center justify-center rounded-xl border border-border bg-surface font-display text-5xl font-bold text-text-muted"
-        >
-          IH
-        </div>
+        <picture>
+          <source srcSet="/images/about-character.webp" type="image/webp" />
+          <img
+            src="/images/about-character.jpg"
+            alt="Character portrait: a figure in a dark leather jacket, hand in hair, face hidden in shadow against a moody teal background"
+            width={480}
+            height={720}
+            className="h-auto w-48 rounded-xl border border-border object-cover"
+          />
+        </picture>
         <figcaption className="mt-4 font-mono text-xs text-text-muted">
-          A portrait will go here.
+          Character portrait by{" "}
+          <Link
+            href="https://www.pexels.com/photo/moody-portrait-of-a-person-in-deep-thought-33138368/"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-4"
+          >
+            Vinur. on Pexels
+          </Link>
+          .
         </figcaption>
       </figure>
 

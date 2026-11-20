@@ -107,7 +107,7 @@ export function BlogIndex({ posts }: BlogIndexProps) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search titles, body, and tags"
-            className="mt-2 w-full rounded-lg border border-border bg-background-pure px-4 py-3 text-base text-text-primary outline-none placeholder:text-text-muted focus:border-secondary"
+            className="mt-2 w-full rounded-lg border border-border bg-background-pure px-4 py-3 text-base text-text-primary outline-none placeholder:text-text-muted focus:border-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
           />
         </div>
         <div>
@@ -118,7 +118,7 @@ export function BlogIndex({ posts }: BlogIndexProps) {
             id="blog-category"
             value={category}
             onChange={(event) => setCategory(event.target.value)}
-            className="mt-2 w-full rounded-lg border border-border bg-background-pure px-4 py-3 text-base text-text-primary outline-none focus:border-secondary sm:w-auto"
+            className="mt-2 w-full rounded-lg border border-border bg-background-pure px-4 py-3 text-base text-text-primary outline-none focus:border-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary sm:w-auto"
           >
             {categories.map((item) => (
               <option key={item} value={item}>
@@ -135,7 +135,7 @@ export function BlogIndex({ posts }: BlogIndexProps) {
             id="blog-tag"
             value={tag}
             onChange={(event) => setTag(event.target.value)}
-            className="mt-2 w-full rounded-lg border border-border bg-background-pure px-4 py-3 text-base text-text-primary outline-none focus:border-secondary sm:w-auto"
+            className="mt-2 w-full rounded-lg border border-border bg-background-pure px-4 py-3 text-base text-text-primary outline-none focus:border-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary sm:w-auto"
           >
             {tags.map((item) => (
               <option key={item} value={item}>

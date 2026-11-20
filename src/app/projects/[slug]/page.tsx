@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAllProjects, getProjectBySlug } from "@/lib/content";
+import { openGraphSite, rssFeedAlternate, twitterCard } from "@/lib/metadata";
 import { site } from "@/lib/site";
 import { MdxContent } from "@/components/MdxContent";
 
@@ -17,7 +18,7 @@ export async function generateMetadata({
   const { slug } = await params;
   const project = getProjectBySlug(slug);
   if (!project) {
-    return { title: "Project not found" };
+    return { title: "Project not found", alternates: { ...rssFeedAlternate } };
   }
   const fm = project.frontmatter;
   return {
@@ -25,15 +26,17 @@ export async function generateMetadata({
     description: fm.description,
     alternates: {
       canonical: `/projects/${fm.slug}`,
+      ...rssFeedAlternate,
     },
     openGraph: {
+      ...openGraphSite,
       type: "website",
       url: `${site.url}/projects/${fm.slug}`,
       title: `${fm.title} | ${site.brand}`,
       description: fm.description,
     },
     twitter: {
-      card: "summary",
+      ...twitterCard,
       title: `${fm.title} | ${site.brand}`,
       description: fm.description,
     },

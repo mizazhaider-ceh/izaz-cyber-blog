@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getAllProjects } from "@/lib/content";
+import { openGraphSite, rssFeedAlternate, twitterCard } from "@/lib/metadata";
 import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -9,8 +10,10 @@ export const metadata: Metadata = {
     "Real projects built by Muhammad Izaz Haider: vulnerable labs, security tooling, teaching sites, and study plans.",
   alternates: {
     canonical: "/projects",
+    ...rssFeedAlternate,
   },
   openGraph: {
+    ...openGraphSite,
     type: "website",
     url: `${site.url}/projects`,
     title: `Projects | ${site.brand}`,
@@ -18,7 +21,7 @@ export const metadata: Metadata = {
       "Real projects built by Muhammad Izaz Haider: vulnerable labs, security tooling, teaching sites, and study plans.",
   },
   twitter: {
-    card: "summary",
+    ...twitterCard,
     title: `Projects | ${site.brand}`,
     description:
       "Real projects built by Muhammad Izaz Haider: vulnerable labs, security tooling, teaching sites, and study plans.",

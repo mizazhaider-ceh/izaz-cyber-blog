@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getAllPosts } from "@/lib/content";
+import { jsonLdScript, personJsonLd, websiteJsonLd } from "@/lib/jsonld";
+import { openGraphSite, rssFeedAlternate, twitterCard } from "@/lib/metadata";
 import { site } from "@/lib/site";
 import { TOPICS } from "@/lib/topics";
 import { ArticleRow } from "@/components/ArticleRow";
+import { NewsletterSignup } from "@/components/NewsletterSignup";
+import { SignatureMark } from "@/components/SignatureMark";
 
 export const metadata: Metadata = {
   // Home is the one page where the root layout template is not applied
@@ -14,27 +18,48 @@ export const metadata: Metadata = {
   description: site.description,
   alternates: {
     canonical: "/",
+    ...rssFeedAlternate,
   },
   openGraph: {
+    ...openGraphSite,
     type: "website",
     url: site.url,
     title: `${site.name} | ${site.brand}`,
     description: site.description,
+    images: [
+      {
+        url: `${site.url}/og/default.png`,
+        width: 1200,
+        height: 630,
+        alt: `${site.name} | ${site.brand}`,
+      },
+    ],
   },
   twitter: {
-    card: "summary",
+    ...twitterCard,
+    card: "summary_large_image",
     title: `${site.name} | ${site.brand}`,
     description: site.description,
+    images: [`${site.url}/og/default.png`],
   },
 };
 
 export default function Home() {
   const posts = getAllPosts();
-  const selected = posts.slice(0, 4);
+  const featured = posts.filter((post) => post.frontmatter.featured);
 
   return (
     <div className="mx-auto max-w-[1140px] px-6">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(websiteJsonLd()) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLdScript(personJsonLd()) }}
+      />
       <section className="pb-16 pt-16 md:pb-24 md:pt-24">
+        <SignatureMark size={44} className="mb-8 text-text-primary" />
         <p className="font-mono text-xs uppercase tracking-widest text-text-muted">
           Cybersecurity &middot; Artificial Intelligence &middot; Engineering
         </p>
@@ -42,13 +67,16 @@ export default function Home() {
           Izaz Haider.
         </h1>
         <p className="mt-8 max-w-[720px] text-xl leading-8 text-text-secondary">
-          I write about cybersecurity, offensive security, artificial intelligence, software
-          engineering and the things I learn while researching, building and experimenting with
-          technology.
+          I write about cybersecurity, offensive security, and artificial intelligence, from
+          things I have actually built, tested, or broken.
+        </p>
+        <p className="mt-4 max-w-[720px] text-base leading-7 text-text-secondary">
+          CSCB 2026: #1 Web Junior, #3 overall Junior, #26 of 806, with 26 flags. CNSP with
+          Merit.
         </p>
         <p className="mt-4 max-w-[720px] text-base leading-7 text-text-muted">
-          {site.tagline} Every article here is written from something I actually built, tested, or
-          broke myself.
+          Currently building this blog, izaz.dev, and VulnNotes, a mobile security project due
+          December 2026.
         </p>
         <div className="mt-12 flex flex-wrap items-center gap-8">
           <Link
@@ -68,10 +96,10 @@ export default function Home() {
 
       <hr className="border-border" />
 
-      <section className="py-16" aria-labelledby="selected-writing">
+      <section className="py-16" aria-labelledby="start-here">
         <div className="flex flex-wrap items-baseline justify-between gap-4">
-          <h2 id="selected-writing" className="font-display text-2xl font-bold text-text-primary">
-            Selected writing
+          <h2 id="start-here" className="font-display text-2xl font-bold text-text-primary">
+            Start here
           </h2>
           <Link
             href="/blog"
@@ -80,13 +108,13 @@ export default function Home() {
             View all writing
           </Link>
         </div>
-        {selected.length === 0 ? (
+        {featured.length === 0 ? (
           <p className="mt-8 text-base leading-7 text-text-muted">
             No articles published yet. Check back soon.
           </p>
         ) : (
           <ul className="mt-8">
-            {selected.map((post) => (
+            {featured.map((post) => (
               <ArticleRow
                 key={post.frontmatter.slug}
                 href={`/blog/${post.frontmatter.slug}`}
@@ -111,6 +139,7 @@ export default function Home() {
             <li key={topic.label}>
               <Link
                 href={`/blog?topic=${encodeURIComponent(topic.label)}`}
+                prefetch={false}
                 className="font-mono text-sm text-text-secondary underline decoration-border underline-offset-4 transition-colors hover:text-primary"
               >
                 {topic.label}
@@ -119,6 +148,8 @@ export default function Home() {
           ))}
         </ul>
       </section>
+
+      <NewsletterSignup />
     </div>
   );
 }

@@ -25,7 +25,7 @@ export function SearchPageContent({ items }: { items: SearchItem[] }) {
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Try pentrix, parser, manifest, or powershell"
         autoFocus
-        className="mt-2 w-full rounded-lg border border-border bg-background-pure px-4 py-3 text-base text-text-primary outline-none placeholder:text-text-muted focus:border-secondary"
+        className="mt-2 w-full rounded-lg border border-border bg-background-pure px-4 py-3 text-base text-text-primary outline-none placeholder:text-text-muted focus:border-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
       />
       <p className="mt-4 font-mono text-xs text-text-muted">
         Press Ctrl+K or Cmd+K anywhere on the site to open the quick search.

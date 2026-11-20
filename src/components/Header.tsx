@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { site } from "@/lib/site";
+import { SignatureMark } from "./SignatureMark";
 import { ThemeToggle } from "./ThemeToggle";
 
 export function Header() {
@@ -24,11 +25,7 @@ export function Header() {
           className="flex items-center gap-2 font-mono text-base font-medium text-text-primary"
           aria-label="izaz.dev, home"
         >
-          <span aria-hidden="true" className="text-primary">
-            $
-          </span>
-          <span>izaz</span>
-          <span aria-hidden="true" className="inline-block h-4 w-2 bg-primary" />
+          <SignatureMark size={26} decorative className="text-text-primary" />
           <span className="sr-only">izaz.dev</span>
         </Link>
 

@@ -20,6 +20,22 @@ export function personJsonLd(): Record<string, unknown> {
   };
 }
 
+export function websiteJsonLd(): Record<string, unknown> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: site.brand,
+    url: site.url,
+    description: site.description,
+    inLanguage: "en",
+    author: {
+      "@type": "Person",
+      name: site.fullName,
+      url: site.url,
+    },
+  };
+}
+
 export function articleJsonLd(post: Post): Record<string, unknown> {
   const fm = post.frontmatter;
   const url = `${site.url}/blog/${fm.slug}`;

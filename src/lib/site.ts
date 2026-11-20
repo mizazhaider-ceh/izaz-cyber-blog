@@ -12,7 +12,7 @@ export const site = {
   tagline: "Exploring technology. Understanding security. Building what matters.",
   description:
     "Personal blog of Muhammad Izaz Haider: cybersecurity, artificial intelligence, and engineering, written from real builds.",
-  url: "https://izaz.dev",
+  url: "https://izaz-cyber-blog.vercel.app",
   email: "mizazhaiderceh@gmail.com",
   github: "https://github.com/mizazhaider-ceh",
   linkedin: "https://www.linkedin.com/in/muhammad-izaz-haider-091639314/",
@@ -27,6 +27,8 @@ export const site = {
     { label: "Writing", href: "/blog" },
     { label: "Projects", href: "/projects" },
     { label: "Search", href: "/search" },
+    { label: "RSS", href: "/rss" },
+    { label: "Changelog", href: "/changelog" },
     { label: "GitHub", href: "https://github.com/mizazhaider-ceh" },
     { label: "LinkedIn", href: "https://www.linkedin.com/in/muhammad-izaz-haider-091639314/" },
     { label: "Email", href: "mailto:mizazhaiderceh@gmail.com" },

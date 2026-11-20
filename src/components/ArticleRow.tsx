@@ -12,7 +12,7 @@ interface ArticleRowProps {
 export function ArticleRow({ href, date, title, readingTime, category }: ArticleRowProps) {
   return (
     <li className="border-b border-border py-6 first:pt-0 last:border-b-0">
-      <Link href={href} className="group grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 sm:grid-cols-[120px_1fr_auto] sm:items-baseline sm:gap-x-6">
+      <Link href={href} prefetch={false} className="group grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 sm:grid-cols-[120px_1fr_auto] sm:items-baseline sm:gap-x-6">
         <time
           dateTime={date}
           className="font-mono text-xs text-text-muted sm:text-sm"

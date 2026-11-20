@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { getAllPosts, getAllProjects } from "@/lib/content";
 import { buildSearchIndex } from "@/lib/search";
+import { openGraphSite, rssFeedAlternate, twitterCard } from "@/lib/metadata";
+import { site } from "@/lib/site";
 import { SearchPageContent } from "@/components/SearchPageContent";
 
 export const metadata: Metadata = {
@@ -9,6 +11,19 @@ export const metadata: Metadata = {
   description: "Search every article and project on izaz.dev.",
   alternates: {
     canonical: "/search",
+    ...rssFeedAlternate,
+  },
+  openGraph: {
+    ...openGraphSite,
+    type: "website",
+    url: `${site.url}/search`,
+    title: `Search | ${site.brand}`,
+    description: "Search every article and project on izaz.dev.",
+  },
+  twitter: {
+    ...twitterCard,
+    title: `Search | ${site.brand}`,
+    description: "Search every article and project on izaz.dev.",
   },
   // Search results pages carry no indexable content of their own.
   robots: {
