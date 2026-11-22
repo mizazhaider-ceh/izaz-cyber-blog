@@ -12,7 +12,10 @@ import {
 
 export type Theme = "light" | "dark";
 
-export const THEME_STORAGE_KEY = "izaz-dev-theme";
+// The key string "izaz-dev-theme" is also hardcoded in the pre-paint
+// script in src/app/layout.tsx (it must stay a self-contained string)
+// and in the privacy page prose. Change it in all three places.
+const THEME_STORAGE_KEY = "izaz-dev-theme";
 
 type ThemeContextValue = {
   theme: Theme;
@@ -37,10 +40,14 @@ function resolveSystemTheme(): Theme {
   }
 }
 
+function parseStoredTheme(value: string | null): Theme | null {
+  return value === "dark" || value === "light" ? value : null;
+}
+
 function readStoredTheme(): Theme {
   try {
-    const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (stored === "dark" || stored === "light") {
+    const stored = parseStoredTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
+    if (stored !== null) {
       return stored;
     }
   } catch {
@@ -64,13 +71,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setMounted(true);
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onSystemChange = () => {
-      let stored: string | null = null;
+      let stored: Theme | null = null;
       try {
-        stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+        stored = parseStoredTheme(window.localStorage.getItem(THEME_STORAGE_KEY));
       } catch {
         // Storage unavailable: treat as no stored value.
       }
-      if (stored !== "dark" && stored !== "light") {
+      if (stored === null) {
         const next: Theme = media.matches ? "dark" : "light";
         document.documentElement.setAttribute("data-theme", next);
         setTheme(next);

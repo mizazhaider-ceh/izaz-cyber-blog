@@ -11,7 +11,7 @@
 // Until the username is set, this component renders nothing, so a
 // dead form can never ship. Do not put a guessed username here.
 // See docs/NEWSLETTER.md for the full setup notes.
-export const BUTTONDOWN_USERNAME = "";
+const BUTTONDOWN_USERNAME = "";
 
 export function NewsletterSignup() {
   if (!BUTTONDOWN_USERNAME) {

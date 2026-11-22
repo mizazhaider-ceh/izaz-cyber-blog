@@ -10,6 +10,12 @@ import { ArticleRow } from "./ArticleRow";
 
 const PAGE_SIZE = 5;
 
+function postHaystack(post: Post, strip = true): string {
+  const fm = post.frontmatter;
+  const content = strip ? stripMarkdown(post.content) : post.content;
+  return [fm.title, fm.description, fm.category, fm.tags.join(" "), content].join(" ");
+}
+
 interface BlogIndexProps {
   posts: Post[];
 }
@@ -48,8 +54,7 @@ export function BlogIndex({ posts }: BlogIndexProps) {
     return posts.filter((post) => {
       const fm = post.frontmatter;
       if (topicParam) {
-        const haystack = [fm.title, fm.description, fm.category, fm.tags.join(" "), post.content].join(" ");
-        if (!topicMatchesTopicParam(topicParam, haystack)) {
+        if (!topicMatchesTopicParam(topicParam, postHaystack(post, false))) {
           return false;
         }
       }
@@ -60,9 +65,7 @@ export function BlogIndex({ posts }: BlogIndexProps) {
         return false;
       }
       if (needle) {
-        const haystack = [fm.title, fm.description, fm.category, fm.tags.join(" "), stripMarkdown(post.content)]
-          .join(" ")
-          .toLowerCase();
+        const haystack = postHaystack(post).toLowerCase();
         if (!needle.split(/\s+/).every((word) => haystack.includes(word))) {
           return false;
         }

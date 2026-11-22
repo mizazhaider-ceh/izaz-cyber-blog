@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-export type CalloutType =
+type CalloutType =
   | "NOTE"
   | "TIP"
   | "WARNING"

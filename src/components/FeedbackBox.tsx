@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { site } from "@/lib/site";
 
 type Vote = "yes" | "no";
 
@@ -9,7 +10,6 @@ interface FeedbackBoxProps {
   title: string;
 }
 
-const LIVE_SITE_URL = "https://izaz-cyber-blog.vercel.app";
 const ISSUE_NEW_URL = "https://github.com/mizazhaider-ceh/izaz-cyber-blog/issues/new";
 
 function storageKey(slug: string): string {
@@ -40,7 +40,7 @@ export function FeedbackBox({ slug, title }: FeedbackBoxProps) {
     }
   }
 
-  const articleUrl = `${LIVE_SITE_URL}/blog/${slug}`;
+  const articleUrl = `${site.url}/blog/${slug}`;
   const issueUrl =
     `${ISSUE_NEW_URL}?title=${encodeURIComponent(`Correction: ${title}`)}` +
     `&body=${encodeURIComponent(

@@ -1,7 +1,8 @@
 "use client";
 
 import { Check, Copy } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
+import { useCopyFeedback } from "./useCopyFeedback";
 
 interface CodeBlockProps {
   code: string;
@@ -21,7 +22,8 @@ interface CodeBlockProps {
  * kept as-is, so syntax highlighting is preserved.
  */
 export function CodeBlock({ code, language, children }: CodeBlockProps) {
-  const [copied, setCopied] = useState(false);
+  const { state, copy } = useCopyFeedback();
+  const copied = state === "copied";
   const cleanCode = code.replace(/\n$/, "");
   const lineCount = cleanCode.split("\n").length;
   // Audit item 20: each copy button names the block it copies, so a
@@ -39,14 +41,8 @@ export function CodeBlock({ code, language, children }: CodeBlockProps) {
       ? `Copy ${languageLabel} code`
       : "Copy code";
 
-  async function copyCode() {
-    try {
-      await navigator.clipboard.writeText(cleanCode);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
+  function copyCode() {
+    void copy(cleanCode);
   }
 
   return (

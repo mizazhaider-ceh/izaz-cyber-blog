@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, Copy, Linkedin } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCopyFeedback } from "./useCopyFeedback";
 
 interface ShareButtonsProps {
   url: string;
@@ -22,28 +22,10 @@ interface ShareButtonsProps {
  * reliably announced.
  */
 export function ShareButtons({ url, title }: ShareButtonsProps) {
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const timerRef = useRef<number | null>(null);
+  const { state: copyState, copy } = useCopyFeedback();
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) {
-        window.clearTimeout(timerRef.current);
-      }
-    };
-  }, []);
-
-  async function copyLink() {
-    if (timerRef.current !== null) {
-      window.clearTimeout(timerRef.current);
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-    timerRef.current = window.setTimeout(() => setCopyState("idle"), 2000);
+  function copyLink() {
+    void copy(url);
   }
 
   const xHref = `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(url)}`;
