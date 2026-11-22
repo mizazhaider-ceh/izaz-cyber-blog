@@ -17,29 +17,51 @@ export interface SearchResult extends SearchItem {
   excerpt: string;
 }
 
+type SearchableFrontmatter = Pick<
+  SearchItem,
+  "slug" | "title" | "description" | "category" | "tags"
+>;
+
+/** One search item from either a post or a project frontmatter. */
+function toSearchItem(
+  kind: SearchItem["kind"],
+  fm: SearchableFrontmatter,
+  date: string,
+  href: string,
+  body: string,
+): SearchItem {
+  return {
+    kind,
+    slug: fm.slug,
+    href,
+    title: fm.title,
+    description: fm.description,
+    category: fm.category,
+    tags: fm.tags,
+    date,
+    body,
+  };
+}
+
 export function buildSearchIndex(posts: Post[], projects: Project[]): SearchItem[] {
-  const postItems: SearchItem[] = posts.map((post) => ({
-    kind: "article",
-    slug: post.frontmatter.slug,
-    href: `/blog/${post.frontmatter.slug}`,
-    title: post.frontmatter.title,
-    description: post.frontmatter.description,
-    category: post.frontmatter.category,
-    tags: post.frontmatter.tags,
-    date: post.frontmatter.date,
-    body: stripMarkdown(post.content),
-  }));
-  const projectItems: SearchItem[] = projects.map((project) => ({
-    kind: "project",
-    slug: project.frontmatter.slug,
-    href: `/projects/${project.frontmatter.slug}`,
-    title: project.frontmatter.title,
-    description: project.frontmatter.description,
-    category: project.frontmatter.category,
-    tags: project.frontmatter.tags,
-    date: "",
-    body: stripMarkdown(project.content),
-  }));
+  const postItems: SearchItem[] = posts.map((post) =>
+    toSearchItem(
+      "article",
+      post.frontmatter,
+      post.frontmatter.date,
+      `/blog/${post.frontmatter.slug}`,
+      stripMarkdown(post.content),
+    ),
+  );
+  const projectItems: SearchItem[] = projects.map((project) =>
+    toSearchItem(
+      "project",
+      project.frontmatter,
+      "",
+      `/projects/${project.frontmatter.slug}`,
+      stripMarkdown(project.content),
+    ),
+  );
   return [...postItems, ...projectItems];
 }
 
@@ -63,20 +85,22 @@ export function searchItems(items: SearchItem[], rawQuery: string): SearchResult
   const words = query.split(/\s+/).filter(Boolean);
   const scored = items
     .map((item) => {
+      const titleLower = item.title.toLowerCase();
+      const tagsJoined = item.tags.join(" ").toLowerCase();
       const haystack = [
-        item.title,
+        titleLower,
         item.description,
         item.category,
-        item.tags.join(" "),
+        tagsJoined,
         item.body,
       ]
         .join(" ")
         .toLowerCase();
       const titleHits = words.filter((word) =>
-        item.title.toLowerCase().includes(word),
+        titleLower.includes(word),
       ).length;
       const tagHits = words.filter((word) =>
-        item.tags.join(" ").toLowerCase().includes(word),
+        tagsJoined.includes(word),
       ).length;
       const allMatch = words.every((word) => haystack.includes(word));
       if (!allMatch) {

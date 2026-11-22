@@ -8,12 +8,21 @@ import { site } from "./site";
  * hands-on security work). No birthDate, no invented fields.
  */
 
-export function personJsonLd(): Record<string, unknown> {
+const SCHEMA_CONTEXT = "https://schema.org";
+
+/** The author object shared by every JSON-LD document on the site. */
+function personRef(): Record<string, unknown> {
   return {
-    "@context": "https://schema.org",
     "@type": "Person",
     name: site.fullName,
     url: site.url,
+  };
+}
+
+export function personJsonLd(): Record<string, unknown> {
+  return {
+    "@context": SCHEMA_CONTEXT,
+    ...personRef(),
     description: site.tagline,
     jobTitle: "Cybersecurity student and researcher",
     sameAs: [site.github, site.linkedin],
@@ -22,17 +31,13 @@ export function personJsonLd(): Record<string, unknown> {
 
 export function websiteJsonLd(): Record<string, unknown> {
   return {
-    "@context": "https://schema.org",
+    "@context": SCHEMA_CONTEXT,
     "@type": "WebSite",
     name: site.brand,
     url: site.url,
     description: site.description,
     inLanguage: "en",
-    author: {
-      "@type": "Person",
-      name: site.fullName,
-      url: site.url,
-    },
+    author: personRef(),
   };
 }
 
@@ -40,15 +45,11 @@ export function articleJsonLd(post: Post): Record<string, unknown> {
   const fm = post.frontmatter;
   const url = `${site.url}/blog/${fm.slug}`;
   return {
-    "@context": "https://schema.org",
+    "@context": SCHEMA_CONTEXT,
     "@type": "Article",
     headline: fm.title,
     description: fm.description,
-    author: {
-      "@type": "Person",
-      name: site.fullName,
-      url: site.url,
-    },
+    author: personRef(),
     datePublished: fm.date,
     dateModified: fm.updatedAt ?? fm.date,
     mainEntityOfPage: {

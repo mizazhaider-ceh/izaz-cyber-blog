@@ -8,7 +8,7 @@ const PROJECTS_DIR = path.join(CONTENT_DIR, "projects");
 
 const WORDS_PER_MINUTE = 200;
 
-export interface PostFrontmatter {
+interface PostFrontmatter {
   title: string;
   slug: string;
   description: string;
@@ -23,7 +23,7 @@ export interface PostFrontmatter {
   featured: boolean;
 }
 
-export interface ProjectFrontmatter {
+interface ProjectFrontmatter {
   title: string;
   slug: string;
   description: string;
@@ -46,13 +46,12 @@ export interface Project {
   content: string;
 }
 
-function readingTimeMinutes(text: string): number {
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(1, Math.ceil(words / WORDS_PER_MINUTE));
+function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function wordCount(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
+function readingTimeMinutes(text: string): number {
+  return Math.max(1, Math.ceil(countWords(text) / WORDS_PER_MINUTE));
 }
 
 function readMdxFiles(dir: string): string[] {
@@ -65,45 +64,63 @@ function readMdxFiles(dir: string): string[] {
     .sort();
 }
 
-function parsePost(filePath: string): Post | null {
-  const raw = fs.readFileSync(filePath, "utf8");
-  const { data, content } = matter(raw);
-  if (data.draft === true) {
-    return null;
-  }
-  const frontmatter: PostFrontmatter = {
+/** Fields shared by post and project frontmatter, extracted the same way. */
+function baseFrontmatter(
+  data: Record<string, unknown>,
+): Pick<
+  PostFrontmatter,
+  "title" | "slug" | "description" | "category" | "tags" | "draft" | "featured"
+> {
+  return {
     title: String(data.title),
     slug: String(data.slug),
     description: String(data.description),
-    date: String(data.date),
-    updatedAt: data.updatedAt ? String(data.updatedAt) : undefined,
     category: String(data.category),
     tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
-    author: "Muhammad Izaz Haider",
-    readingTime: readingTimeMinutes(content),
-    coverImage: data.coverImage ? String(data.coverImage) : undefined,
     draft: false,
     featured: Boolean(data.featured),
   };
-  return { frontmatter, content, wordCount: wordCount(content) };
 }
 
-function parseProject(filePath: string): Project | null {
+/** Read one MDX file and return its frontmatter and content, or null for a draft. */
+function readMdx(
+  filePath: string,
+): { data: Record<string, unknown>; content: string } | null {
   const raw = fs.readFileSync(filePath, "utf8");
   const { data, content } = matter(raw);
   if (data.draft === true) {
     return null;
   }
+  return { data, content };
+}
+
+function parsePost(filePath: string): Post | null {
+  const parsed = readMdx(filePath);
+  if (!parsed) {
+    return null;
+  }
+  const { data, content } = parsed;
+  const frontmatter: PostFrontmatter = {
+    ...baseFrontmatter(data),
+    date: String(data.date),
+    updatedAt: data.updatedAt ? String(data.updatedAt) : undefined,
+    author: "Muhammad Izaz Haider",
+    readingTime: readingTimeMinutes(content),
+    coverImage: data.coverImage ? String(data.coverImage) : undefined,
+  };
+  return { frontmatter, content, wordCount: countWords(content) };
+}
+
+function parseProject(filePath: string): Project | null {
+  const parsed = readMdx(filePath);
+  if (!parsed) {
+    return null;
+  }
+  const { data, content } = parsed;
   const frontmatter: ProjectFrontmatter = {
-    title: String(data.title),
-    slug: String(data.slug),
-    description: String(data.description),
-    category: String(data.category),
-    tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
+    ...baseFrontmatter(data),
     status: String(data.status),
     repo: String(data.repo),
-    draft: false,
-    featured: Boolean(data.featured),
   };
   return { frontmatter, content };
 }

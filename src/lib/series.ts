@@ -59,11 +59,11 @@ export const seriesList: Series[] = [
   },
 ];
 
-export function getSeriesBySlug(seriesSlug: string): Series | null {
+function getSeriesBySlug(seriesSlug: string): Series | null {
   return seriesList.find((series) => series.slug === seriesSlug) ?? null;
 }
 
-export function getSeriesForPost(slug: string): Series | null {
+function getSeriesForPost(slug: string): Series | null {
   return seriesList.find((series) => series.slugs.includes(slug)) ?? null;
 }
 
